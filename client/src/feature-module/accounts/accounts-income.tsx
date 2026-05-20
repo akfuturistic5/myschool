@@ -10,9 +10,9 @@ import CommonSelect from "../../core/common/commonSelect";
 import {
   incomeName,
   invoiceNumber,
-  paymentMethod,
   source,
 } from "../../core/common/selectoption/selectoption";
+import { useAccountsPaymentModes } from "./useAccountsPaymentModes";
 import { DatePicker } from "antd";
 import { all_routes } from "../router/all_routes";
 import TooltipOption from "../../core/common/tooltipOption";
@@ -34,6 +34,7 @@ function mapIncomeApiToRow(r: any) {
     raw: r,
     id: r.income_code,
     incomeName: r.income_name ?? "",
+    category: r.category_name ?? "",
     description: r.description ?? "",
     source: r.source ?? "",
     date: formatDateMonthDayYear(r.income_date),
@@ -46,6 +47,8 @@ function mapIncomeApiToRow(r: any) {
 const AccountsIncome = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const { filterOptions: paymentMethodFilterOptions, defaultPaymentMethod, optionsIncluding } =
+    useAccountsPaymentModes();
   const user = useSelector(selectUser);
   const schoolLogoSrc = getSchoolLogoSrc(user);
   const [rows, setRows] = useState<any[]>([]);
@@ -65,6 +68,7 @@ const AccountsIncome = () => {
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
   const [sortBy, setSortBy] = useState("");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [categoryOptions, setCategoryOptions] = useState<{ value: string; label: string }[]>([]);
 
   const sortOrderFor = (field: string) =>
     sortBy === field ? (sortDir === "asc" ? ("ascend" as const) : ("descend" as const)) : null;
@@ -83,15 +87,42 @@ const AccountsIncome = () => {
 
   const emptyAdd = {
     income_name: "",
+    category_id: "" as string,
     source: "",
     description: "",
     income_date: "" as string,
     amount: "",
     invoice_no: "",
-    payment_method: "Cash",
+    payment_method: defaultPaymentMethod,
   };
   const [addForm, setAddForm] = useState({ ...emptyAdd });
   const [editForm, setEditForm] = useState({ ...emptyAdd });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiService.getAccountsCategories({
+          category_type: "Income",
+          ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
+          page_size: 500,
+        });
+        const { data } = parseAccountsListResponse(res);
+        if (cancelled) return;
+        setCategoryOptions(
+          data.map((c: { id?: number; category_name?: string }) => ({
+            value: String(c.id),
+            label: c.category_name || `Category ${c.id}`,
+          }))
+        );
+      } catch {
+        if (!cancelled) setCategoryOptions([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [academicYearId]);
 
   const showModal = (id: string) => {
     const el = document.getElementById(id);
@@ -211,7 +242,11 @@ const AccountsIncome = () => {
 
   const openAdd = () => {
     setFormError(null);
-    setAddForm({ ...emptyAdd });
+    setAddForm({
+      ...emptyAdd,
+      category_id: categoryOptions[0]?.value || "",
+      payment_method: defaultPaymentMethod,
+    });
     setTimeout(() => showModal("add_income"), 0);
   };
 
@@ -225,12 +260,14 @@ const AccountsIncome = () => {
     setSelectedRecord(record);
     setEditForm({
       income_name: r.income_name || "",
+      category_id: r.category_id != null ? String(r.category_id) : "",
       source: r.source || "",
       description: r.description || "",
       income_date: r.income_date ? String(r.income_date).slice(0, 10) : "",
       amount: r.amount != null ? String(r.amount) : "",
       invoice_no: r.invoice_no || "",
-      payment_method: r.payment_method && r.payment_method !== "Select" ? r.payment_method : "Cash",
+      payment_method:
+        r.payment_method && r.payment_method !== "Select" ? r.payment_method : defaultPaymentMethod,
     });
     setFormError(null);
     setTimeout(() => showModal("edit_income"), 0);
@@ -269,6 +306,11 @@ const AccountsIncome = () => {
         key: "income_name",
         sorter: true,
         sortOrder: sortOrderFor("income_name"),
+      },
+      {
+        title: "Category",
+        dataIndex: "category",
+        key: "category_name",
       },
       {
         title: "Description",
@@ -396,14 +438,17 @@ const AccountsIncome = () => {
     document.body.click();
   };
 
+  const categorySelectOptions = [{ value: "Select", label: "Select" }, ...categoryOptions];
+
   const submitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setFormError(null);
     try {
       const amt = Number(String(addForm.amount).replace(/[^0-9.-]/g, ""));
-      if (!addForm.income_name.trim() || !Number.isFinite(amt) || amt <= 0) {
-        setFormError("Enter a valid income name and amount.");
+      const cid = parseInt(addForm.category_id, 10);
+      if (!addForm.income_name.trim() || !Number.isFinite(cid) || !Number.isFinite(amt) || amt <= 0) {
+        setFormError("Enter income name, category, and a valid amount.");
         setSaving(false);
         return;
       }
@@ -415,6 +460,7 @@ const AccountsIncome = () => {
       }
       await apiService.createAccountsIncome({
         income_name: addForm.income_name.trim(),
+        category_id: cid,
         source: addForm.source.trim() || null,
         description: addForm.description.trim() || null,
         income_date: ymd,
@@ -442,8 +488,9 @@ const AccountsIncome = () => {
     setFormError(null);
     try {
       const amt = Number(String(editForm.amount).replace(/[^0-9.-]/g, ""));
-      if (!editForm.income_name.trim() || !Number.isFinite(amt) || amt <= 0) {
-        setFormError("Enter a valid income name and amount.");
+      const cid = parseInt(editForm.category_id, 10);
+      if (!editForm.income_name.trim() || !Number.isFinite(cid) || !Number.isFinite(amt) || amt <= 0) {
+        setFormError("Enter income name, category, and a valid amount.");
         setSaving(false);
         return;
       }
@@ -455,6 +502,7 @@ const AccountsIncome = () => {
       }
       await apiService.updateAccountsIncome(id, {
         income_name: editForm.income_name.trim(),
+        category_id: cid,
         source: editForm.source.trim() || null,
         description: editForm.description.trim() || null,
         income_date: ymd,
@@ -587,7 +635,7 @@ const AccountsIncome = () => {
                               <label className="form-label">Payment Method</label>
                               <CommonSelect
                                 className="select"
-                                options={paymentMethod}
+                                options={paymentMethodFilterOptions}
                                 value={filterPayment ?? "Select"}
                                 onChange={(v) => setFilterPayment(v)}
                               />
@@ -670,6 +718,17 @@ const AccountsIncome = () => {
                   </div>
                   <div className="col-md-12">
                     <div className="mb-3">
+                      <label className="form-label">Category</label>
+                      <CommonSelect
+                        className="select"
+                        options={categorySelectOptions.filter((o) => o.value !== "Select")}
+                        value={addForm.category_id || undefined}
+                        onChange={(v) => setAddForm((f) => ({ ...f, category_id: v || "" }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="col-md-12">
+                    <div className="mb-3">
                       <label className="form-label">Source</label>
                       <input
                         type="text"
@@ -727,10 +786,10 @@ const AccountsIncome = () => {
                       <label className="form-label">Payment Method</label>
                       <CommonSelect
                         className="select"
-                        options={paymentMethod}
+                        options={optionsIncluding(addForm.payment_method)}
                         value={addForm.payment_method}
                         onChange={(v) =>
-                          setAddForm((f) => ({ ...f, payment_method: v || "Cash" }))
+                          setAddForm((f) => ({ ...f, payment_method: v || defaultPaymentMethod }))
                         }
                       />
                     </div>
@@ -797,6 +856,17 @@ const AccountsIncome = () => {
                   </div>
                   <div className="col-md-12">
                     <div className="mb-3">
+                      <label className="form-label">Category</label>
+                      <CommonSelect
+                        className="select"
+                        options={categorySelectOptions.filter((o) => o.value !== "Select")}
+                        value={editForm.category_id || undefined}
+                        onChange={(v) => setEditForm((f) => ({ ...f, category_id: v || "" }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="col-md-12">
+                    <div className="mb-3">
                       <label className="form-label">Source</label>
                       <input
                         type="text"
@@ -809,7 +879,7 @@ const AccountsIncome = () => {
                   </div>
                   <div className="col-md-6">
                     <div className="mb-3">
-                      <label className="form-label">Date of Birth</label>
+                      <label className="form-label">Date</label>
                       <DatePicker
                         className="form-control datetimepicker"
                         placeholder="Select Date"
@@ -852,10 +922,10 @@ const AccountsIncome = () => {
                       <label className="form-label">Payment Method</label>
                       <CommonSelect
                         className="select"
-                        options={paymentMethod}
+                        options={optionsIncluding(editForm.payment_method)}
                         value={editForm.payment_method}
                         onChange={(v) =>
-                          setEditForm((f) => ({ ...f, payment_method: v || "Cash" }))
+                          setEditForm((f) => ({ ...f, payment_method: v || defaultPaymentMethod }))
                         }
                       />
                     </div>

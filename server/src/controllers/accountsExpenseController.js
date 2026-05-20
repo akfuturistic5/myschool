@@ -1,57 +1,15 @@
 const { query, executeTransaction } = require('../config/database');
 const { resolveAcademicYearIdFromQuery } = require('../utils/libraryAcademicYear');
 const { parsePagination, listMeta, buildOrderClause } = require('../utils/accountsPagination');
+const {
+  sliceYmd,
+  resolveRequiredAcademicYearId,
+  assertCategoryUsable,
+  mapLedgerToExpense,
+  LEDGER_FROM,
+} = require('../utils/accountsFinancialLedger');
 
-function padCode(prefix, id) {
-  return `${prefix}${String(id).padStart(6, '0')}`;
-}
-
-function sliceYmd(s) {
-  if (s == null || String(s).trim() === '') return null;
-  return String(s).trim().slice(0, 10);
-}
-
-async function assertCategoryUsable(client, categoryId, expenseYearId) {
-  const r = await client.query(
-    `SELECT id, academic_year_id, COALESCE(is_active, true) AS is_active
-     FROM account_categories WHERE id = $1 AND deleted_at IS NULL AND category_type = 'Expense'`,
-    [categoryId]
-  );
-  if (r.rows.length === 0) {
-    throw Object.assign(new Error('CATEGORY_NOT_FOUND'), { code: 'CATEGORY_NOT_FOUND' });
-  }
-  const c = r.rows[0];
-  if (!c.is_active) {
-    throw Object.assign(new Error('CATEGORY_INACTIVE'), { code: 'CATEGORY_INACTIVE' });
-  }
-  if (c.academic_year_id != null && expenseYearId == null) {
-    throw Object.assign(new Error('CATEGORY_YEAR_MISMATCH'), { code: 'CATEGORY_YEAR_MISMATCH' });
-  }
-  if (c.academic_year_id != null && expenseYearId != null && c.academic_year_id !== expenseYearId) {
-    throw Object.assign(new Error('CATEGORY_YEAR_MISMATCH'), { code: 'CATEGORY_YEAR_MISMATCH' });
-  }
-}
-
-function mapExpenseRow(row) {
-  if (!row) return null;
-  const id = row.id;
-  return {
-    id,
-    expense_code: padCode('E', id),
-    academic_year_id: row.academic_year_id,
-    category_id: row.category_id,
-    category_name: row.category_name,
-    expense_name: row.expense_name,
-    description: row.description,
-    expense_date: row.expense_date,
-    amount: row.amount != null ? Number(row.amount) : null,
-    invoice_no: row.invoice_no,
-    payment_method: row.payment_method,
-    status: row.status,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  };
-}
+const TX_TYPE = 'Expense';
 
 const listExpenses = async (req, res) => {
   try {
@@ -67,73 +25,70 @@ const listExpenses = async (req, res) => {
     const { page, pageSize, limit, offset } = parsePagination(req.query);
 
     const params = [];
-    let where = 'WHERE 1=1';
+    let where = `WHERE fl.deleted_at IS NULL AND fl.transaction_type = '${TX_TYPE}'`;
     if (yearId != null) {
       params.push(yearId);
-      where += ` AND e.academic_year_id = $${params.length}`;
+      where += ` AND fl.academic_year_id = $${params.length}`;
     }
     if (Number.isFinite(categoryId)) {
       params.push(categoryId);
-      where += ` AND e.category_id = $${params.length}`;
+      where += ` AND fl.category_id = $${params.length}`;
     }
     if (status && ['Completed', 'Pending'].includes(status)) {
       params.push(status);
-      where += ` AND e.status = $${params.length}`;
+      where += ` AND fl.status = $${params.length}`;
     }
     if (search) {
       const p = `%${search}%`;
       params.push(p);
       const n = params.length;
       where += ` AND (
-        e.expense_name ILIKE $${n}
-        OR COALESCE(e.description, '') ILIKE $${n}
-        OR COALESCE(e.invoice_no, '') ILIKE $${n}
+        fl.title ILIKE $${n}
+        OR COALESCE(fl.description, '') ILIKE $${n}
+        OR COALESCE(fl.invoice_no, '') ILIKE $${n}
         OR COALESCE(cat.category_name, '') ILIKE $${n}
       )`;
     }
     if (dateFrom) {
       params.push(dateFrom);
-      where += ` AND e.expense_date >= $${params.length}::date`;
+      where += ` AND fl.transaction_date >= $${params.length}::date`;
     }
     if (dateTo) {
       params.push(dateTo);
-      where += ` AND e.expense_date <= $${params.length}::date`;
+      where += ` AND fl.transaction_date <= $${params.length}::date`;
     }
-
-    const baseFrom = `FROM accounts_expenses e
-      INNER JOIN account_categories cat ON cat.id = e.category_id AND cat.deleted_at IS NULL AND cat.category_type = 'Expense'
-      ${where}`;
 
     const orderSql = buildOrderClause(
       req.query,
       {
-        expense_date: 'e.expense_date',
-        amount: 'e.amount',
-        expense_name: 'e.expense_name',
-        invoice_no: 'e.invoice_no',
-        status: 'e.status',
+        expense_date: 'fl.transaction_date',
+        amount: 'fl.amount',
+        expense_name: 'fl.title',
+        invoice_no: 'fl.invoice_no',
+        status: 'fl.status',
         category_name: 'cat.category_name',
-        payment_method: 'e.payment_method',
-        id: 'e.id',
+        payment_method: 'fl.payment_mode',
+        id: 'fl.id',
       },
       'expense_date',
-      'e.id DESC'
+      'fl.id DESC'
     );
 
-    const countR = await query(`SELECT COUNT(*)::int AS c ${baseFrom}`, [...params]);
+    const countR = await query(`SELECT COUNT(*)::int AS c ${LEDGER_FROM} ${where}`, [...params]);
     const total = countR.rows[0].c;
 
     const dataParams = [...params, limit, offset];
     const limIdx = dataParams.length - 1;
     const offIdx = dataParams.length;
     const r = await query(
-      `SELECT e.*, cat.category_name
-       ${baseFrom}
+      `SELECT fl.*, cat.category_name
+       ${LEDGER_FROM}
+       ${where}
        ${orderSql}
        LIMIT $${limIdx} OFFSET $${offIdx}`,
       dataParams
     );
-    const data = r.rows.map(mapExpenseRow);
+    const data = r.rows.map(mapLedgerToExpense);
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Expenses fetched',
@@ -154,16 +109,15 @@ const getExpense = async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid id' });
     }
     const r = await query(
-      `SELECT e.*, cat.category_name
-       FROM accounts_expenses e
-       INNER JOIN account_categories cat ON cat.id = e.category_id AND cat.deleted_at IS NULL AND cat.category_type = 'Expense'
-       WHERE e.id = $1`,
-      [id]
+      `SELECT fl.*, cat.category_name
+       ${LEDGER_FROM}
+       WHERE fl.id = $1 AND fl.deleted_at IS NULL AND fl.transaction_type = $2`,
+      [id, TX_TYPE]
     );
     if (r.rows.length === 0) {
       return res.status(404).json({ status: 'ERROR', message: 'Expense not found' });
     }
-    res.status(200).json({ status: 'SUCCESS', message: 'OK', data: mapExpenseRow(r.rows[0]) });
+    res.status(200).json({ status: 'SUCCESS', message: 'OK', data: mapLedgerToExpense(r.rows[0]) });
   } catch (e) {
     console.error('accounts expenses get', e);
     res.status(500).json({ status: 'ERROR', message: 'Failed to get expense' });
@@ -176,66 +130,51 @@ const createExpense = async (req, res) => {
     if (!Number.isFinite(category_id)) {
       return res.status(400).json({ status: 'ERROR', message: 'category_id is required' });
     }
-    const yearId =
-      req.body.academic_year_id != null && req.body.academic_year_id !== ''
-        ? parseInt(req.body.academic_year_id, 10)
-        : await resolveAcademicYearIdFromQuery({ query: {} });
+    const yearId = await resolveRequiredAcademicYearId(req.body, await resolveAcademicYearIdFromQuery(req));
+    if (!Number.isFinite(yearId)) {
+      return res.status(400).json({ status: 'ERROR', message: 'academic_year_id is required' });
+    }
     const expense_date = sliceYmd(req.body.expense_date);
     if (!expense_date) {
       return res.status(400).json({ status: 'ERROR', message: 'expense_date is required (YYYY-MM-DD)' });
     }
 
     const row = await executeTransaction(async (client) => {
-      await assertCategoryUsable(client, category_id, Number.isFinite(yearId) ? yearId : null);
+      await assertCategoryUsable(client, category_id, yearId, 'Expense');
 
       const ins = await client.query(
-        `INSERT INTO accounts_expenses (
-           academic_year_id, category_id, expense_name, description, expense_date,
-           amount, invoice_no, payment_method, status, created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5::date, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `INSERT INTO financial_ledger (
+           academic_year_id, category_id, title, description, transaction_date,
+           amount, transaction_type, payment_mode, invoice_no, status,
+           created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5::date, $6, $7, $8, $9, $10, NOW(), NOW())
          RETURNING *`,
         [
-          Number.isFinite(yearId) ? yearId : null,
+          yearId,
           category_id,
           String(req.body.expense_name).trim(),
           req.body.description != null ? String(req.body.description).trim() : null,
           expense_date,
           req.body.amount,
-          req.body.invoice_no != null ? String(req.body.invoice_no).trim() : null,
+          TX_TYPE,
           req.body.payment_method != null ? String(req.body.payment_method).trim() : null,
+          req.body.invoice_no != null ? String(req.body.invoice_no).trim() : null,
           req.body.status || 'Completed',
         ]
       );
-      const exp = ins.rows[0];
-
-      await client.query(
-        `INSERT INTO accounts_transactions (
-           academic_year_id, description, transaction_date, amount, payment_method,
-           transaction_type, status, income_id, expense_id, created_at, updated_at
-         ) VALUES ($1, $2, $3::date, $4, $5, 'Expense', $6, NULL, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-        [
-          exp.academic_year_id,
-          exp.expense_name,
-          exp.expense_date,
-          exp.amount,
-          exp.payment_method,
-          exp.status === 'Pending' ? 'Pending' : 'Completed',
-          exp.id,
-        ]
-      );
-      return exp;
+      return ins.rows[0];
     });
 
     const cat = await query(
-      `SELECT category_name FROM account_categories WHERE id = $1 AND deleted_at IS NULL AND category_type = 'Expense'`,
+      `SELECT category_name FROM account_categories WHERE id = $1 AND deleted_at IS NULL`,
       [category_id]
     );
-    const merged = { ...row, category_name: cat.rows[0]?.category_name };
-    res.status(201).json({ status: 'SUCCESS', message: 'Expense created', data: mapExpenseRow(merged) });
+    res.status(201).json({
+      status: 'SUCCESS',
+      message: 'Expense created',
+      data: mapLedgerToExpense({ ...row, category_name: cat.rows[0]?.category_name }),
+    });
   } catch (e) {
-    if (e.code === '23505') {
-      return res.status(409).json({ status: 'ERROR', message: 'Invoice number already exists for this academic year' });
-    }
     if (e.code === 'CATEGORY_NOT_FOUND') {
       return res.status(400).json({ status: 'ERROR', message: 'Category does not exist' });
     }
@@ -260,7 +199,10 @@ const updateExpense = async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid id' });
     }
 
-    const existing = await query(`SELECT * FROM accounts_expenses WHERE id = $1`, [id]);
+    const existing = await query(
+      `SELECT * FROM financial_ledger WHERE id = $1 AND deleted_at IS NULL AND transaction_type = $2`,
+      [id, TX_TYPE]
+    );
     if (existing.rows.length === 0) {
       return res.status(404).json({ status: 'ERROR', message: 'Expense not found' });
     }
@@ -272,12 +214,15 @@ const updateExpense = async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid category_id' });
     }
 
-    const expense_name =
-      req.body.expense_name != null ? String(req.body.expense_name).trim() : cur.expense_name;
+    const title = req.body.expense_name != null ? String(req.body.expense_name).trim() : cur.title;
     const description =
-      req.body.description !== undefined ? (req.body.description != null ? String(req.body.description).trim() : null) : cur.description;
-    const expense_date =
-      req.body.expense_date != null ? sliceYmd(req.body.expense_date) || cur.expense_date : cur.expense_date;
+      req.body.description !== undefined
+        ? req.body.description != null
+          ? String(req.body.description).trim()
+          : null
+        : cur.description;
+    const transaction_date =
+      req.body.expense_date != null ? sliceYmd(req.body.expense_date) || cur.transaction_date : cur.transaction_date;
     const amount = req.body.amount != null ? req.body.amount : cur.amount;
     const invoice_no =
       req.body.invoice_no !== undefined
@@ -285,77 +230,60 @@ const updateExpense = async (req, res) => {
           ? String(req.body.invoice_no).trim()
           : null
         : cur.invoice_no;
-    const payment_method =
+    const payment_mode =
       req.body.payment_method !== undefined
         ? req.body.payment_method != null
           ? String(req.body.payment_method).trim()
           : null
-        : cur.payment_method;
+        : cur.payment_mode;
     const status = req.body.status != null ? req.body.status : cur.status;
     const academic_year_id =
       req.body.academic_year_id !== undefined
         ? req.body.academic_year_id != null && req.body.academic_year_id !== ''
           ? parseInt(req.body.academic_year_id, 10)
-          : null
+          : cur.academic_year_id
         : cur.academic_year_id;
 
     await executeTransaction(async (client) => {
-      await assertCategoryUsable(client, category_id, Number.isFinite(academic_year_id) ? academic_year_id : null);
+      await assertCategoryUsable(client, category_id, academic_year_id, 'Expense');
 
       await client.query(
-        `UPDATE accounts_expenses SET
+        `UPDATE financial_ledger SET
            academic_year_id = $1,
            category_id = $2,
-           expense_name = $3,
+           title = $3,
            description = $4,
-           expense_date = $5::date,
+           transaction_date = $5::date,
            amount = $6,
-           invoice_no = $7,
-           payment_method = $8,
+           payment_mode = $7,
+           invoice_no = $8,
            status = $9,
-           updated_at = CURRENT_TIMESTAMP
-         WHERE id = $10`,
+           updated_at = NOW()
+         WHERE id = $10 AND deleted_at IS NULL AND transaction_type = $11`,
         [
           academic_year_id,
           category_id,
-          expense_name,
+          title,
           description,
-          expense_date,
+          transaction_date,
           amount,
+          payment_mode,
           invoice_no,
-          payment_method,
           status,
           id,
+          TX_TYPE,
         ]
-      );
-
-      const txStatus = status === 'Pending' ? 'Pending' : 'Completed';
-      await client.query(
-        `UPDATE accounts_transactions SET
-           description = $1,
-           transaction_date = $2::date,
-           amount = $3,
-           payment_method = $4,
-           academic_year_id = $5,
-           status = $6,
-           updated_at = CURRENT_TIMESTAMP
-         WHERE expense_id = $7`,
-        [expense_name, expense_date, amount, payment_method, academic_year_id, txStatus, id]
       );
     });
 
     const r = await query(
-      `SELECT e.*, cat.category_name
-       FROM accounts_expenses e
-       INNER JOIN account_categories cat ON cat.id = e.category_id AND cat.deleted_at IS NULL AND cat.category_type = 'Expense'
-       WHERE e.id = $1`,
+      `SELECT fl.*, cat.category_name
+       ${LEDGER_FROM}
+       WHERE fl.id = $1 AND fl.deleted_at IS NULL`,
       [id]
     );
-    res.status(200).json({ status: 'SUCCESS', message: 'Expense updated', data: mapExpenseRow(r.rows[0]) });
+    res.status(200).json({ status: 'SUCCESS', message: 'Expense updated', data: mapLedgerToExpense(r.rows[0]) });
   } catch (e) {
-    if (e.code === '23505') {
-      return res.status(409).json({ status: 'ERROR', message: 'Invoice number already exists for this academic year' });
-    }
     if (e.code === 'CATEGORY_NOT_FOUND') {
       return res.status(400).json({ status: 'ERROR', message: 'Category does not exist' });
     }
@@ -379,17 +307,18 @@ const deleteExpense = async (req, res) => {
     if (!Number.isFinite(id)) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid id' });
     }
-    await executeTransaction(async (client) => {
-      const del = await client.query(`DELETE FROM accounts_expenses WHERE id = $1 RETURNING id`, [id]);
-      if (del.rows.length === 0) {
-        throw Object.assign(new Error('NOT_FOUND'), { code: 'NOT_FOUND' });
-      }
-    });
-    res.status(200).json({ status: 'SUCCESS', message: 'Expense deleted', data: { id } });
-  } catch (e) {
-    if (e.code === 'NOT_FOUND') {
+    const del = await query(
+      `UPDATE financial_ledger
+       SET deleted_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND deleted_at IS NULL AND transaction_type = $2
+       RETURNING id`,
+      [id, TX_TYPE]
+    );
+    if (del.rows.length === 0) {
       return res.status(404).json({ status: 'ERROR', message: 'Expense not found' });
     }
+    res.status(200).json({ status: 'SUCCESS', message: 'Expense deleted', data: { id } });
+  } catch (e) {
     console.error('accounts expenses delete', e);
     res.status(500).json({ status: 'ERROR', message: 'Failed to delete expense' });
   }
