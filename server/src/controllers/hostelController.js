@@ -25,6 +25,25 @@ const buildCodeSlug = (name) => {
   return slug || 'HOSTEL';
 };
 
+/** Ensures warden_user_id refers to an active user with the Warden login role. */
+async function assertWardenUserId(wUid) {
+  if (wUid == null) return;
+  const w = await query(
+    `SELECT u.id
+     FROM users u
+     INNER JOIN user_roles ur ON ur.id = u.role_id
+     WHERE u.id = $1
+       AND LOWER(TRIM(COALESCE(ur.role_name, ''))) = 'warden'
+     LIMIT 1`,
+    [wUid]
+  );
+  if (!w.rows.length) {
+    const err = new Error('Selected warden must be a staff user with the Warden role');
+    err.statusCode = 400;
+    throw err;
+  }
+}
+
 const allocateUniqueHostelCode = async (base) => {
   for (let i = 0; i < 100; i += 1) {
     const c = i === 0 ? base : `${base}_${i}`;
@@ -132,8 +151,11 @@ const createHostel = async (req, res) => {
         : null;
     if (wUid !== null && Number.isNaN(wUid)) wUid = null;
     if (wUid !== null) {
-      const w = await query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [wUid]);
-      if (!w.rows.length) return errorResponse(res, 400, 'Invalid warden_user_id');
+      try {
+        await assertWardenUserId(wUid);
+      } catch (e) {
+        return errorResponse(res, e.statusCode || 400, e.message || 'Invalid warden_user_id');
+      }
     }
 
     const finalCodeRaw = code != null && String(code).trim() !== '' ? String(code).trim().toUpperCase() : null;
@@ -277,8 +299,11 @@ const updateHostel = async (req, res) => {
         body.warden_user_id !== null && body.warden_user_id !== '' ? Number(body.warden_user_id) : null;
       if (wUid !== null && Number.isNaN(wUid)) wUid = null;
       if (wUid !== null) {
-        const w = await query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [wUid]);
-        if (!w.rows.length) return errorResponse(res, 400, 'Invalid warden_user_id');
+        try {
+          await assertWardenUserId(wUid);
+        } catch (e) {
+          return errorResponse(res, e.statusCode || 400, e.message || 'Invalid warden_user_id');
+        }
       }
       updates.push(`warden_user_id = $${idx++}`);
       params.push(wUid);

@@ -372,6 +372,14 @@ const Staff = () => {
           ),
       },
       {
+        title: "Role",
+        dataIndex: "role",
+        sorter: (a: TableData, b: TableData) =>
+          String((a as any).role ?? "").localeCompare(
+            String((b as any).role ?? "")
+          ),
+      },
+      {
         title: "Phone",
         dataIndex: "phone",
         sorter: (a: TableData, b: TableData) =>

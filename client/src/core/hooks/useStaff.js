@@ -42,6 +42,12 @@ export const useStaff = (options = {}) => {
             staff.title ||
             'N/A';
 
+          const role =
+            staff.user_role_name ||
+            staff.role_name ||
+            staff.role ||
+            'N/A';
+
           const phone = staff.phone || 'N/A';
           const email = staff.email || 'N/A';
 
@@ -70,6 +76,7 @@ export const useStaff = (options = {}) => {
             name,
             department,
             designation,
+            role,
             phone,
             email,
             dateOfJoin,

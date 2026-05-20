@@ -281,6 +281,7 @@ const createStaff = async (req, res) => {
       marital_status, father_name, mother_name, id_number,
       languages_known, other_info, photo_url, is_active,
       license_number, license_expiry,
+      role_id,
       epf_no, pan_number, bank_name, account_name, account_number,
       branch, ifsc, contract_type, shift, work_location,
       facebook, twitter, linkedin, youtube, instagram,
@@ -302,9 +303,11 @@ const createStaff = async (req, res) => {
     const desigParsed = parsePositiveIntOrNull(designation_id);
     const deptParsed = parsePositiveIntOrNull(department_id);
     const bgParsed = parsePositiveIntOrNull(blood_group_id);
+    const roleIdParsed = parsePositiveIntOrNull(role_id);
     if (designation_id != null && designation_id !== '' && Number.isNaN(desigParsed)) return errorResponse(res, 400, 'Invalid designation', 'VALIDATION_ERROR');
     if (department_id != null && department_id !== '' && Number.isNaN(deptParsed)) return errorResponse(res, 400, 'Invalid department', 'VALIDATION_ERROR');
     if (blood_group_id != null && blood_group_id !== '' && Number.isNaN(bgParsed)) return errorResponse(res, 400, 'Invalid blood group', 'VALIDATION_ERROR');
+    if (role_id != null && role_id !== '' && Number.isNaN(roleIdParsed)) return errorResponse(res, 400, 'Invalid role', 'VALIDATION_ERROR');
 
     let statusValue = 'Active';
     if (is_active === false || is_active === 'false' || is_active === 0 || is_active === 'Inactive') statusValue = 'Inactive';
@@ -348,7 +351,19 @@ const createStaff = async (req, res) => {
       }
 
       let resolvedStaffRoleId = ROLES.ADMINISTRATIVE;
-      if (isDriverRole) {
+      const explicitRoleProvided = role_id != null && role_id !== '';
+      if (explicitRoleProvided && !Number.isNaN(roleIdParsed)) {
+        const rOk = await client.query(
+          `SELECT id FROM user_roles WHERE id = $1 AND (is_active IS NOT FALSE) LIMIT 1`,
+          [roleIdParsed]
+        );
+        if (!rOk.rows.length) {
+          const err = new Error('Invalid role');
+          err.staffInputError = { status: 400, code: 'INVALID_ROLE' };
+          throw err;
+        }
+        resolvedStaffRoleId = roleIdParsed;
+      } else if (isDriverRole) {
         const drRole = await client.query(`SELECT id FROM user_roles WHERE LOWER(TRIM(role_name)) = 'driver' LIMIT 1`);
         if (!drRole.rows[0]) { const err = new Error('Driver role is not configured in user_roles.'); err.staffInputError = { status: 500, code: 'DRIVER_ROLE_MISSING' }; throw err; }
         resolvedStaffRoleId = drRole.rows[0].id;
@@ -417,9 +432,9 @@ const createStaff = async (req, res) => {
         );
       }
 
-      await syncStaffUserRole(client, userId, { isDriver: Boolean(isDriverRole) });
-
-
+      if (!explicitRoleProvided) {
+        await syncStaffUserRole(client, userId, { isDriver: Boolean(isDriverRole) });
+      }
 
       return staffId;
     });
@@ -458,6 +473,7 @@ const updateStaff = async (req, res) => {
       marital_status, father_name, mother_name, id_number,
       languages_known, other_info, photo_url, is_active,
       license_number, license_expiry,
+      role_id,
       epf_no, pan_number, bank_name, account_name, account_number,
       branch, ifsc, contract_type, shift, work_location,
       facebook, twitter, linkedin, youtube, instagram,
@@ -476,6 +492,10 @@ const updateStaff = async (req, res) => {
     const desigParsed = designation_id !== undefined ? parsePositiveIntOrNull(designation_id) : undefined;
     const deptParsed = department_id !== undefined ? parsePositiveIntOrNull(department_id) : undefined;
     const bgParsed = blood_group_id !== undefined ? parsePositiveIntOrNull(blood_group_id) : undefined;
+    const roleIdParsed = role_id !== undefined ? parsePositiveIntOrNull(role_id) : undefined;
+    if (role_id !== undefined && role_id !== null && role_id !== '' && Number.isNaN(roleIdParsed)) {
+      return errorResponse(res, 400, 'Invalid role', 'VALIDATION_ERROR');
+    }
 
     await executeTransaction(async (client) => {
       if (email !== undefined && email !== null) {
@@ -505,6 +525,22 @@ const updateStaff = async (req, res) => {
         if (linkedin !== undefined) uadd('linkedin', linkedin || null);
         if (youtube !== undefined) uadd('youtube', youtube || null);
         if (instagram !== undefined) uadd('instagram', instagram || null);
+        if (role_id !== undefined) {
+          if (roleIdParsed && !Number.isNaN(roleIdParsed)) {
+            const rOk = await client.query(
+              `SELECT id FROM user_roles WHERE id = $1 AND (is_active IS NOT FALSE) LIMIT 1`,
+              [roleIdParsed]
+            );
+            if (!rOk.rows.length) {
+              const err = new Error('Invalid role');
+              err.staffInputError = { status: 400, code: 'INVALID_ROLE' };
+              throw err;
+            }
+            uadd('role_id', roleIdParsed);
+          } else {
+            uadd('role_id', null);
+          }
+        }
 
         let nextStatus = prev.status || 'Active';
         if (is_active !== undefined) {
@@ -610,7 +646,9 @@ const updateStaff = async (req, res) => {
       );
       const cur = staffNow.rows[0];
       const isDrv = cur?.desig_key && DRIVER_DESIGNATION_KEYS.has(cur.desig_key);
-      if (cur?.user_id) await syncStaffUserRole(client, cur.user_id, { isDriver: Boolean(isDrv) });
+      if (cur?.user_id && role_id === undefined) {
+        await syncStaffUserRole(client, cur.user_id, { isDriver: Boolean(isDrv) });
+      }
 
       if (isDrv) {
         const supId = await getSupportStaffDepartmentId(client);
