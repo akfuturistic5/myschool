@@ -29,14 +29,14 @@ const TeacherLeave = () => {
   const state = location.state as TeacherDetailsLocationState | null;
   const user = useSelector(selectUser);
   const selectedAcademicYearId = useSelector(selectSelectedAcademicYearId);
-  const { academicYears } = useAcademicYears();
+  const { academicYears } = useAcademicYears() as any;
   const isTeacherRole = String(user?.role || "").toLowerCase() === "teacher";
   const currentAcademicYear =
     (academicYears || []).find((year: { is_current?: boolean }) => year?.is_current) ??
     (academicYears || [])[0] ??
     null;
   const effectiveAcademicYearId = selectedAcademicYearId ?? currentAcademicYear?.id ?? null;
-  const { teacher: currentTeacher } = useCurrentTeacher();
+  const { teacher: currentTeacher } = useCurrentTeacher() as any;
   const teacherIdFromState = state?.teacherId ?? state?.teacher?.id;
   const teacherId = teacherIdFromState ?? currentTeacher?.id;
   const [teacher, setTeacher] = useState<any>(state?.teacher ?? null);
@@ -76,7 +76,7 @@ const TeacherLeave = () => {
   const { data: myAttendanceData, loading: myAttendanceLoading, error: myAttendanceError } = useMyAttendance({
     days: 365,
     enabled: selfScopeEnabled,
-  });
+  }) as any;
 
   const normalizeStatus = (value: string) => {
     const s = String(value || "").trim().toLowerCase();
@@ -270,7 +270,7 @@ const TeacherLeave = () => {
   });
   const { leaveTypes } = useLeaveTypes({ applicableFor: "staff" });
   const data = useMemo(() => {
-    return leaveApplications.map((l) => ({
+    return leaveApplications.map((l: any) => ({
       ...l,
       leaveDate: l.leaveRange,
     }));
@@ -367,15 +367,22 @@ const TeacherLeave = () => {
     {
       title: "Status",
       dataIndex: "status",
-      render: (text: string) => {
+      render: (text: string, record: any) => {
         const status = String(text || "").toLowerCase();
         const badgeClass = status === "approved" ? "badge-soft-success" : status === "rejected" ? "badge-soft-danger" : status === "cancelled" ? "badge-soft-secondary" : "badge-soft-pending";
         const label = status ? status.charAt(0).toUpperCase() + status.slice(1) : "Pending";
         return (
-          <span className={`badge ${badgeClass} d-inline-flex align-items-center`}>
-            <i className="ti ti-circle-filled fs-5 me-1"></i>
-            {label}
-          </span>
+          <div className="d-flex flex-column align-items-start gap-1">
+            <span className={`badge ${badgeClass} d-inline-flex align-items-center`}>
+              <i className="ti ti-circle-filled fs-5 me-1"></i>
+              {label}
+            </span>
+            {status === "rejected" && record.rejectionReason && (
+              <span className="text-danger small fw-normal mt-1" style={{ fontSize: "11px", maxWidth: "220px", display: "block", whiteSpace: "normal", lineHeight: "1.3" }} title={record.rejectionReason}>
+                <strong>Reason:</strong> {record.rejectionReason}
+              </span>
+            )}
+          </div>
         );
       },
       sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
@@ -388,7 +395,7 @@ const TeacherLeave = () => {
         <div className="content">
           <div className="row">
             {/* Page Header */}
-            <TeacherBreadcrumb />
+            <TeacherBreadcrumb teacherId={effectiveTeacher?.id} teacher={effectiveTeacher} />
             {/* /Page Header */}
           </div>
           <div className="row">

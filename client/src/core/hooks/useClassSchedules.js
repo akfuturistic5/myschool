@@ -105,6 +105,7 @@ export const useClassSchedules = (params = {}) => {
           section: row.section ?? '',
           teacher: row.teacher ?? '',
           subject: row.subject ?? '',
+          subjectType: row.subjectType ?? row.originalData?.subjectType ?? 'Theory',
           day: row.day ?? 'N/A',
           startTime: formatTimeDisplay(row.startTime) ?? 'N/A',
           endTime: formatTimeDisplay(row.endTime) ?? 'N/A',

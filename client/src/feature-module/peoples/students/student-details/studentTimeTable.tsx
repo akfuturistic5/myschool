@@ -1,5 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { useMemo } from "react";
+import type { ReactElement } from "react";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../../router/all_routes";
 import StudentModals from "../studentModals";
@@ -10,6 +11,19 @@ import { useLinkedStudentContext } from "../../../../core/hooks/useLinkedStudent
 import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
 import { selectUser } from "../../../../core/data/redux/authSlice";
 import { isTeacherRole } from "../../../../core/utils/roleUtils";
+import {
+  WEEK_DAYS,
+  buildPeriodColumnsFromSlots,
+  findCellForSlot,
+} from "../../../academic/utils/sectionRoutineGrid";
+
+interface PeriodCol {
+  id: number;
+  label: string;
+  start: string;
+  end: string;
+  isBreak: boolean;
+}
 
 interface StudentDetailsLocationState {
   studentId?: number;
@@ -25,6 +39,127 @@ function parsePositiveId(value: unknown): number | null {
 
 function normalizeText(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function parseTimeToMinutes(timeStr: string): number {
+  if (!timeStr) return 0;
+  const clean = String(timeStr).trim();
+  const match12 = clean.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
+  if (match12) {
+    let hours = parseInt(match12[1], 10);
+    const minutes = parseInt(match12[2], 10);
+    const ampm = match12[3].toUpperCase();
+    if (ampm === "PM" && hours !== 12) hours += 12;
+    if (ampm === "AM" && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+  }
+  const match24 = clean.match(/^(\d+):(\d+)$/);
+  if (match24) {
+    const hours = parseInt(match24[1], 10);
+    const minutes = parseInt(match24[2], 10);
+    return hours * 60 + minutes;
+  }
+  return 0;
+}
+
+function StudentRoutineGridCell({
+  slot,
+  entry,
+}: {
+  slot: PeriodCol;
+  entry: any | undefined;
+}): ReactElement {
+  if (slot.isBreak) {
+    return (
+      <td className="bg-light align-middle text-center py-3" style={{ minWidth: 140, border: "1px solid #f1f1f4" }}>
+        <span className="badge bg-soft-secondary text-uppercase fw-semibold" style={{ fontSize: "10px", letterSpacing: "0.5px" }}>
+          Break
+        </span>
+      </td>
+    );
+  }
+
+  if (entry) {
+    const isPractical = String(entry.subjectType || "").toLowerCase() === "practical";
+    
+    // Dynamic color coding based on subject name hash
+    const colors = [
+      { bg: "rgba(118, 56, 255, 0.06)", border: "#7638ff" }, // Purple
+      { bg: "rgba(13, 110, 253, 0.06)", border: "#0d6efd" }, // Blue
+      { bg: "rgba(25, 135, 84, 0.06)", border: "#198754" }, // Green
+      { bg: "rgba(253, 126, 20, 0.06)", border: "#fd7e14" }, // Orange
+      { bg: "rgba(111, 66, 193, 0.06)", border: "#6f42c1" }, // Indigo
+      { bg: "rgba(220, 53, 69, 0.06)", border: "#dc3545" }, // Red
+      { bg: "rgba(13, 202, 240, 0.06)", border: "#0dcaf0" }  // Cyan
+    ];
+    
+    // Simple hash function to assign stable color per subject
+    const subjectName = String(entry.subject || "");
+    let hash = 0;
+    for (let i = 0; i < subjectName.length; i++) {
+      hash = subjectName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const colorIndex = Math.abs(hash) % colors.length;
+    const color = colors[colorIndex];
+
+    const roomLabel = String(entry.classRoom ?? "").trim();
+    const resolvedRoom = roomLabel && roomLabel !== "N/A" && roomLabel !== "—" ? `Room ${roomLabel}` : "Room TBA";
+
+    return (
+      <td className="align-middle p-2.5" style={{ minWidth: 185, maxWidth: 240, border: "1px solid #f1f1f4" }}>
+        <div 
+          className="rounded p-3 h-100 d-flex flex-column justify-content-between gap-2 transition-all shadow-sm-hover" 
+          style={{ 
+            backgroundColor: color.bg, 
+            borderLeft: `4px solid ${color.border}`,
+            boxShadow: "0 2px 4px rgba(0,0,0,0.03)",
+            minHeight: "95px"
+          }}
+        >
+          <div>
+            {/* Subject and Type Badge */}
+            <div className="d-flex align-items-start justify-content-between gap-2 mb-1.5 flex-wrap">
+              <span className="fw-bold text-dark text-break line-clamp-2" style={{ fontSize: "14.5px", lineHeight: "1.25" }}>
+                {entry.subject ?? "—"}
+              </span>
+              <span 
+                className={`badge rounded-pill text-uppercase px-2.5 py-1`} 
+                style={{ 
+                  fontSize: "10px", 
+                  fontWeight: 700,
+                  backgroundColor: isPractical ? "rgba(25, 135, 84, 0.15)" : "rgba(118, 56, 255, 0.15)",
+                  color: isPractical ? "#198754" : "#7638ff",
+                  letterSpacing: "0.2px"
+                }}
+              >
+                {entry.subjectType || "Theory"}
+              </span>
+            </div>
+            
+            {/* Teacher Details */}
+            <div className="text-muted text-truncate" style={{ fontSize: "12px" }} title={entry.teacher || "—"}>
+              <i className="ti ti-user me-1 text-secondary" style={{ fontSize: "12px" }} />
+              {entry.teacher || "—"}
+            </div>
+          </div>
+
+          {/* Room details */}
+          <div className="d-flex align-items-center justify-content-between mt-1.5 pt-1.5 border-top" style={{ borderColor: "rgba(0,0,0,0.05)" }}>
+            <span className="text-muted text-truncate" style={{ fontSize: "12px" }}>
+              <i className="ti ti-building me-1 text-secondary" style={{ fontSize: "12px" }} />
+              {resolvedRoom}
+            </span>
+          </div>
+        </div>
+      </td>
+    );
+  }
+
+  return (
+    <td className="align-middle text-center py-4" style={{ minWidth: 120, border: "1px solid #f1f1f4" }}>
+      <span className="text-muted opacity-40">—</span>
+    </td>
+  );
 }
 
 const StudentTimeTable = () => {
@@ -80,7 +215,7 @@ const StudentTimeTable = () => {
   const academicYearForSchedules =
     studentAcademicYearId ?? headerAcademicYearId ?? undefined;
 
-  const { data: scheduleData, loading: scheduleLoading, error: scheduleError } = useClassSchedules({
+  const { data: scheduleData, slots: apiSlots, loading: scheduleLoading, error: scheduleError } = useClassSchedules({
     academicYearId: academicYearForSchedules,
     classId: classIdForSchedule ?? undefined,
     sectionId: undefined,
@@ -110,35 +245,63 @@ const StudentTimeTable = () => {
     });
   }, [scheduleData, classIdForSchedule, sectionIdForSchedule, sectionNameForSchedule, isParentRole]);
 
-  const weeklySchedule = useMemo(() => {
-    if (!Array.isArray(filteredScheduleData)) {
-      return DAY_ORDER.map((day) => ({ day, classes: [] as any[] }));
+  const periodColumns = useMemo(() => {
+    if (apiSlots && apiSlots.length > 0) {
+      return buildPeriodColumnsFromSlots(apiSlots, filteredScheduleData);
     }
-    return DAY_ORDER.map((day) => ({
-      day,
-      classes: filteredScheduleData.filter(
-        (item: any) => String(item.day || "").trim().toLowerCase() === day.toLowerCase()
-      ),
+    const slotsMap = new Map<string, any>();
+    filteredScheduleData.forEach((item: any) => {
+      const start = item.startTime;
+      const end = item.endTime;
+      const slotId = Number(item.originalData?.time_slot_id ?? item.originalData?.time_slot ?? item.originalData?.period_id);
+      if (!start || start === "N/A" || !end || end === "N/A" || !slotId) return;
+
+      const key = `${start}-${end}`;
+      if (!slotsMap.has(key)) {
+        slotsMap.set(key, {
+          id: slotId,
+          label: "Period",
+          start,
+          end,
+          isBreak: false,
+        });
+      }
+    });
+
+    const deduped = Array.from(slotsMap.values());
+    deduped.sort((a, b) => {
+      return parseTimeToMinutes(a.start) - parseTimeToMinutes(b.start);
+    });
+
+    return deduped.map((col, index) => ({
+      ...col,
+      label: `Period ${index + 1}`,
     }));
-  }, [filteredScheduleData]);
+  }, [apiSlots, filteredScheduleData]);
 
   const totalClasses = useMemo(
-    () => weeklySchedule.reduce((sum, entry) => sum + entry.classes.length, 0),
-    [weeklySchedule]
+    () => filteredScheduleData.length,
+    [filteredScheduleData]
   );
 
   const totalSubjects = useMemo(() => {
     const subjects = new Set<string>();
-    weeklySchedule.forEach((entry) => {
-      entry.classes.forEach((item: any) => {
-        const subject = String(item.subject || "").trim();
-        if (subject && subject !== "N/A") subjects.add(subject);
-      });
+    filteredScheduleData.forEach((item: any) => {
+      const subject = String(item.subject || "").trim();
+      if (subject && subject !== "N/A") subjects.add(subject);
     });
     return subjects.size;
-  }, [weeklySchedule]);
+  }, [filteredScheduleData]);
 
-  const activeDays = weeklySchedule.filter((entry) => entry.classes.length > 0).length;
+  const activeDays = useMemo(() => {
+    const days = new Set<string>();
+    filteredScheduleData.forEach((item: any) => {
+      const day = String(item.day || "").trim().toLowerCase();
+      if (day) days.add(day);
+    });
+    return days.size;
+  }, [filteredScheduleData]);
+
   const showLoading = loading;
 
   if (showLoading) {
@@ -279,51 +442,36 @@ const StudentTimeTable = () => {
                       )}
 
                       {!scheduleLoading && totalClasses > 0 && (
-                        <div className="row g-3">
-                          {weeklySchedule.map((entry) => (
-                            <div className="col-12 col-xl-6" key={entry.day}>
-                              <div className="border rounded h-100">
-                                <div className="d-flex align-items-center justify-content-between border-bottom px-3 py-2">
-                                  <h6 className="mb-0">{entry.day}</h6>
-                                  <span className="badge badge-soft-primary">
-                                    {entry.classes.length} Class{entry.classes.length === 1 ? "" : "es"}
-                                  </span>
-                                </div>
-                                <div className="p-3">
-                                  {entry.classes.length === 0 ? (
-                                    <p className="text-muted mb-0">No classes scheduled.</p>
-                                  ) : (
-                                    <div className="row g-2">
-                                      {entry.classes.map((cls: any) => (
-                                        <div key={cls.id} className="col-6 d-flex">
-                                          <div className="bg-light rounded p-2 w-100 h-100">
-                                            <div className="min-w-0">
-                                              <h6 className="mb-1 text-truncate">{cls.subject || "Subject"}</h6>
-                                              <p className="mb-1 text-dark small text-truncate">
-                                                <i className="ti ti-clock me-1" />
-                                                {cls.startTime || "N/A"} - {cls.endTime || "N/A"}
-                                              </p>
-                                              <p className="mb-1 text-muted small text-truncate">
-                                                <i className="ti ti-user me-1" />
-                                                {cls.teacher || "Teacher not assigned"}
-                                              </p>
-                                              <p
-                                                className="mb-0 text-muted small text-truncate"
-                                                title={cls.classRoom && cls.classRoom !== "N/A" ? `Room ${cls.classRoom}` : "Room TBA"}
-                                              >
-                                                <i className="ti ti-building me-1" />
-                                                {cls.classRoom && cls.classRoom !== "N/A" ? `Room ${cls.classRoom}` : "Room TBA"}
-                                              </p>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      ))}
+                        <div className="table-responsive">
+                          <table className="table table-bordered table-sm align-middle">
+                            <thead className="table-light">
+                              <tr>
+                                <th style={{ minWidth: 96 }}>Day</th>
+                                {periodColumns.map((col) => (
+                                  <th key={col.id} className={col.isBreak ? "text-muted" : ""} style={{ minWidth: 185 }}>
+                                    <div>{col.label}</div>
+                                    <div className="small fw-normal text-muted">
+                                      {col.isBreak ? "Break" : `${col.start} – ${col.end}`}
                                     </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {WEEK_DAYS.map(({ label }) => (
+                                <tr key={label}>
+                                  <th className="table-light">{label}</th>
+                                  {periodColumns.map((col) => (
+                                    <StudentRoutineGridCell
+                                      key={`${label}-${col.id}`}
+                                      slot={col}
+                                      entry={findCellForSlot(filteredScheduleData, label, col.id)}
+                                    />
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       )}
                     </div>

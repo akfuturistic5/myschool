@@ -305,7 +305,7 @@ const StudentLeaves = () => {
     {
       title: "Status",
       dataIndex: "status",
-      render: (text: string) => {
+      render: (text: string, record: any) => {
         const status = String(text || "").toLowerCase();
         const badgeClass =
           status === "approved"
@@ -317,10 +317,17 @@ const StudentLeaves = () => {
                 : "badge-soft-warning";
         const label = status ? status.charAt(0).toUpperCase() + status.slice(1) : "Pending";
         return (
-          <span className={`badge ${badgeClass} d-inline-flex align-items-center`}>
-            <i className="ti ti-circle-filled fs-5 me-1"></i>
-            {label}
-          </span>
+          <div className="d-flex flex-column align-items-start">
+            <span className={`badge ${badgeClass} d-inline-flex align-items-center`}>
+              <i className="ti ti-circle-filled fs-5 me-1"></i>
+              {label}
+            </span>
+            {status === "rejected" && record.rejectionReason && (
+              <span className="text-danger fs-11 mt-1 fw-medium" style={{ maxWidth: "180px", whiteSpace: "normal", wordBreak: "break-word" }} title={record.rejectionReason}>
+                Reason: {record.rejectionReason}
+              </span>
+            )}
+          </div>
         );
       },
       sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,

@@ -187,7 +187,7 @@ const TeacherSalary = () => {
         <div className="content">
           <div className="row">
             {/* Page Header */}
-            <TeacherBreadcrumb />
+            <TeacherBreadcrumb teacherId={teacher?.id} teacher={teacher} />
             {/* /Page Header */}
           </div>
           <div className="row">
@@ -322,7 +322,7 @@ const TeacherSalary = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <TeacherModal />
+      <TeacherModal staffId={teacher?.id} />
     </>
   );
 };

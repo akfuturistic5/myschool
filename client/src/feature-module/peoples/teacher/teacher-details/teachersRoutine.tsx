@@ -10,6 +10,9 @@ import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academ
 import { selectUser } from "../../../../core/data/redux/authSlice";
 import { useCurrentTeacher } from "../../../../core/hooks/useCurrentTeacher";
 import { useTeachers } from "../../../../core/hooks/useTeachers";
+import TeacherSidebar from "./teacherSidebar";
+import TeacherBreadcrumb from "./teacherBreadcrumb";
+import TeacherModal from "../teacherModal";
 
 interface TeacherDetailsLocationState {
   teacherId?: number;
@@ -136,6 +139,24 @@ const TeachersRoutine = () => {
   const rosterLoading = isTeacherPortal ? currentTeacherLoading : teachersListLoading;
   const state = location.state as TeacherDetailsLocationState | null;
 
+  const [teacher, setTeacher] = useState<any>(state?.teacher ?? null);
+  const [teacherLoading, setTeacherLoading] = useState(false);
+  const isDetailsContext = Boolean(state?.teacherId || state?.teacher);
+
+  useEffect(() => {
+    const tid = state?.teacherId ?? state?.teacher?.id;
+    if (tid && !teacher) {
+      setTeacherLoading(true);
+      apiService
+        .getTeacherById(tid)
+        .then((res: any) => {
+          if (res?.data) setTeacher(res.data);
+        })
+        .catch(() => {})
+        .finally(() => setTeacherLoading(false));
+    }
+  }, [state?.teacherId, state?.teacher?.id, teacher]);
+
   const routeDefaultTeacherId = useMemo(() => {
     const q = searchParams.get("teacher_id");
     if (q != null && q !== "") {
@@ -162,6 +183,8 @@ const TeachersRoutine = () => {
     const n = Number(selectTeacherId);
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [selectTeacherId]);
+
+  const effectiveTeacher = teacher ?? (effectiveTeacherId === selfTeacher?.id ? selfTeacher : null);
 
   const [routine, setRoutine] = useState<RoutineItem[]>([]);
   const [apiSlots, setApiSlots] = useState<Record<string, unknown>[]>([]);
@@ -435,6 +458,229 @@ const TeachersRoutine = () => {
     []
   );
 
+  const renderGridContent = () => {
+    return (
+      <div className="card-body border-top pt-3 mt-0">
+        {!academicYearId ? (
+          <div className="alert alert-warning mb-3">Select an academic year in the header to filter this timetable.</div>
+        ) : null}
+        {!isTeacherPortal && teachersListError ? (
+          <div className="alert alert-danger mb-3">
+            Could not load teacher list: {teachersListError}. Check your permissions or try refreshing.
+          </div>
+        ) : null}
+        {!effectiveTeacherId ? (
+          <div className="text-center p-5 border rounded bg-light">
+            <p className="text-muted mb-0">
+              {isTeacherPortal
+                ? rosterLoading
+                  ? "Loading your teacher profile…"
+                  : "Your account is not linked to a teacher profile. Please contact the school office."
+                : "Choose a teacher above to view their weekly timetable."}
+            </p>
+          </div>
+        ) : routineLoading ? (
+          <div className="d-flex justify-content-center align-items-center p-5">
+            <div className="spinner-border text-primary" role="status">
+              <span className="visually-hidden">Loading timetable...</span>
+            </div>
+            <span className="ms-2">Loading timetable...</span>
+          </div>
+        ) : periodColumns.length === 0 ? (
+          <div className="text-center p-5">
+            <p className="text-muted mb-0">
+              No periods are configured. Add active time slots under Academic → Timetable → Time slots.
+            </p>
+          </div>
+        ) : (
+          <div className="table-responsive">
+            <table className="table table-bordered table-sm align-middle">
+              <thead className="table-light">
+                <tr>
+                  <th style={{ minWidth: 96 }}>Day</th>
+                  {periodColumns.map((col) => (
+                    <th key={col.id} className={col.isBreak ? "text-muted" : ""} style={{ minWidth: 140 }}>
+                      <div>{col.label}</div>
+                      <div className="small fw-normal text-muted">
+                        {col.isBreak ? "Break" : `${col.start} – ${col.end}`}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {WEEK_DAYS.map(({ label }) => (
+                  <tr key={label}>
+                    <th className="table-light">{label}</th>
+                    {periodColumns.map((col) => (
+                      <TeacherRoutineGridCell
+                        key={`${label}-${col.id}`}
+                        slot={col}
+                        entry={findCellForSlot(gridData, label, col.id)}
+                      />
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (isDetailsContext) {
+    return (
+      <>
+        <div className="page-wrapper">
+          <div className="content">
+            <div className="row">
+              {/* Page Header */}
+              <TeacherBreadcrumb teacherId={effectiveTeacher?.id} teacher={effectiveTeacher} />
+              {/* /Page Header */}
+            </div>
+            <div className="row">
+              {/* Teacher Information */}
+              {teacherLoading ? (
+                <div className="col-xxl-3 col-xl-4">
+                  <div className="d-flex justify-content-center align-items-center p-5">
+                    <div className="spinner-border text-primary" role="status">
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <TeacherSidebar teacher={effectiveTeacher} />
+              )}
+              {/* /Teacher Information */}
+              <div className="col-xxl-9 col-xl-8">
+                <div className="row">
+                  <div className="col-md-12">
+                    {/* List */}
+                    <ul className="nav nav-tabs nav-tabs-bottom mb-4">
+                      <li>
+                        <Link
+                          to={routes.teacherDetails}
+                          className="nav-link"
+                          state={{ teacherId: effectiveTeacher?.id, teacher: effectiveTeacher }}
+                        >
+                          <i className="ti ti-school me-2" />
+                          Teacher Details
+                        </Link>
+                      </li>
+                      <li>
+                        <Link
+                          to={routes.teachersRoutine}
+                          className="nav-link active"
+                          state={{ teacherId: effectiveTeacher?.id, teacher: effectiveTeacher }}
+                        >
+                          <i className="ti ti-table-options me-2" />
+                          Routine
+                        </Link>
+                      </li>
+                      <li>
+                        <Link
+                          to={routes.teacherLeaves}
+                          className="nav-link"
+                          state={{ teacherId: effectiveTeacher?.id, teacher: effectiveTeacher }}
+                        >
+                          <i className="ti ti-calendar-due me-2" />
+                          Leave &amp; Attendance
+                        </Link>
+                      </li>
+                      <li>
+                        <Link
+                          to={routes.teacherSalary}
+                          className="nav-link"
+                          state={{ teacherId: effectiveTeacher?.id, teacher: effectiveTeacher }}
+                        >
+                          <i className="ti ti-report-money me-2" />
+                          Salary
+                        </Link>
+                      </li>
+                      <li>
+                        <Link
+                          to={routes.teacherLibrary}
+                          className="nav-link"
+                          state={{ teacherId: effectiveTeacher?.id, teacher: effectiveTeacher }}
+                        >
+                          <i className="ti ti-books me-2" />
+                          Library
+                        </Link>
+                      </li>
+                    </ul>
+                    {/* Timetable Card */}
+                    <div className="card">
+                      <div className="card-header border-0 pb-0">
+                        <h5 className="card-title mb-0">Timetable</h5>
+                      </div>
+                      <div className="card-body pt-2 pb-0">
+                        <div className="row g-3 g-lg-4 align-items-end mb-3 mb-lg-4">
+                          <div className="col-12 col-md col-xl-7">
+                            <p className="mb-1 fw-semibold text-dark" style={{ fontSize: "1.05rem" }}>
+                              {teacherLoading ? "Loading…" : `${effectiveTeacher?.first_name || ""} ${effectiveTeacher?.last_name || ""}`.trim() || `Teacher #${effectiveTeacher?.id}`}
+                            </p>
+                            <p className="text-muted small mb-0">
+                              Weekly periods for the selected academic year are shown in the grid below.
+                            </p>
+                          </div>
+                          <div className="col-12 col-md-auto ms-md-auto text-md-end">
+                            <div className="dropdown d-inline-block text-start">
+                              <button
+                                type="button"
+                                className="btn dropdown-toggle d-inline-flex align-items-center gap-2 fw-semibold px-3 py-2 rounded-3 border-0 shadow-none"
+                                style={{ backgroundColor: "#e8edf5", color: "#2c3e50", minHeight: 44 }}
+                                data-bs-toggle="dropdown"
+                                aria-expanded="false"
+                                disabled={!canExport}
+                              >
+                                <i className="ti ti-file-export fs-5" aria-hidden />
+                                <span>Export</span>
+                              </button>
+                              <ul className="dropdown-menu dropdown-menu-end shadow-sm border mt-2 py-1 rounded-3" style={{ minWidth: 220 }}>
+                                <li>
+                                  <button
+                                    type="button"
+                                    className="dropdown-item d-flex align-items-center gap-2 py-2"
+                                    onClick={handleExportPdf}
+                                  >
+                                    <i className="ti ti-file-type-pdf text-danger fs-5" aria-hidden />
+                                    <span>Export as PDF</span>
+                                  </button>
+                                </li>
+                                <li>
+                                  <button
+                                    type="button"
+                                    className="dropdown-item d-flex align-items-center gap-2 py-2"
+                                    onClick={handleExportExcel}
+                                  >
+                                    <i className="ti ti-file-type-xls text-success fs-5" aria-hidden />
+                                    <span>Export as Excel</span>
+                                  </button>
+                                </li>
+                              </ul>
+                            </div>
+                            {!canExport ? (
+                              <p className="text-muted small mt-2 mb-0 text-md-end">
+                                Export is available once the timetable has loaded.
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                      {renderGridContent()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <TeacherModal staffId={effectiveTeacher?.id} />
+      </>
+    );
+  }
+
   return (
     <div className="page-wrapper">
       <div className="content content-two">
@@ -542,72 +788,7 @@ const TeachersRoutine = () => {
               </div>
             </div>
           </div>
-          <div className="card-body border-top pt-3 mt-0">
-                      {!academicYearId ? (
-                        <div className="alert alert-warning mb-3">Select an academic year in the header to filter this timetable.</div>
-                      ) : null}
-                      {!isTeacherPortal && teachersListError ? (
-                        <div className="alert alert-danger mb-3">
-                          Could not load teacher list: {teachersListError}. Check your permissions or try refreshing.
-                        </div>
-                      ) : null}
-                      {!effectiveTeacherId ? (
-                        <div className="text-center p-5 border rounded bg-light">
-                          <p className="text-muted mb-0">
-                            {isTeacherPortal
-                              ? rosterLoading
-                                ? "Loading your teacher profile…"
-                                : "Your account is not linked to a teacher profile. Please contact the school office."
-                              : "Choose a teacher above to view their weekly timetable."}
-                          </p>
-                        </div>
-                      ) : routineLoading ? (
-                        <div className="d-flex justify-content-center align-items-center p-5">
-                          <div className="spinner-border text-primary" role="status">
-                            <span className="visually-hidden">Loading timetable...</span>
-                          </div>
-                          <span className="ms-2">Loading timetable...</span>
-                        </div>
-                      ) : periodColumns.length === 0 ? (
-                        <div className="text-center p-5">
-                          <p className="text-muted mb-0">
-                            No periods are configured. Add active time slots under Academic → Timetable → Time slots.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="table-responsive">
-                          <table className="table table-bordered table-sm align-middle">
-                            <thead className="table-light">
-                              <tr>
-                                <th style={{ minWidth: 96 }}>Day</th>
-                                {periodColumns.map((col) => (
-                                  <th key={col.id} className={col.isBreak ? "text-muted" : ""} style={{ minWidth: 140 }}>
-                                    <div>{col.label}</div>
-                                    <div className="small fw-normal text-muted">
-                                      {col.isBreak ? "Break" : `${col.start} – ${col.end}`}
-                                    </div>
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {WEEK_DAYS.map(({ label }) => (
-                                <tr key={label}>
-                                  <th className="table-light">{label}</th>
-                                  {periodColumns.map((col) => (
-                                    <TeacherRoutineGridCell
-                                      key={`${label}-${col.id}`}
-                                      slot={col}
-                                      entry={findCellForSlot(gridData, label, col.id)}
-                                    />
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-          </div>
+          {renderGridContent()}
         </div>
       </div>
     </div>

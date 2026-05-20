@@ -80,6 +80,7 @@ export const useGuardianWardLeaves = (options = {}) => {
             document_url: row.document_url || null,
             badgeClass: getBadgeClass(leaveType),
             status: statusVal,
+            rejectionReason: row.rejection_reason ?? null,
             statusBadgeClass: statusLower.includes('approv') ? 'bg-success' : statusLower.includes('declin') || statusLower.includes('reject') ? 'bg-danger' : 'bg-skyblue',
           };
         });
