@@ -21,6 +21,7 @@ const createIncomeSchema = Joi.object({
   amount: money,
   invoice_no: Joi.string().trim().max(64).allow(null, ''),
   payment_method: Joi.string().trim().max(64).allow(null, ''),
+  category_id: Joi.number().integer().positive().required(),
   academic_year_id: Joi.number().integer().positive().allow(null),
 });
 
@@ -32,6 +33,7 @@ const updateIncomeSchema = Joi.object({
   amount: moneyOptional.optional(),
   invoice_no: Joi.string().trim().max(64).allow(null, ''),
   payment_method: Joi.string().trim().max(64).allow(null, ''),
+  category_id: Joi.number().integer().positive().optional(),
   academic_year_id: Joi.number().integer().positive().allow(null),
 }).min(1);
 

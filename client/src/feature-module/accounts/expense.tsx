@@ -10,8 +10,8 @@ import CommonSelect from "../../core/common/commonSelect";
 import {
   expenseName,
   invoiceNumber,
-  paymentMethod,
 } from "../../core/common/selectoption/selectoption";
+import { useAccountsPaymentModes } from "./useAccountsPaymentModes";
 import { DatePicker } from "antd";
 import { all_routes } from "../router/all_routes";
 import TooltipOption from "../../core/common/tooltipOption";
@@ -41,6 +41,7 @@ function mapExpenseApiToRow(r: any) {
 const Expense = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const { defaultPaymentMethod, optionsIncluding } = useAccountsPaymentModes();
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -93,7 +94,7 @@ const Expense = () => {
     expense_date: "" as string,
     amount: "",
     invoice_no: "",
-    payment_method: "Cash",
+    payment_method: defaultPaymentMethod,
     status: "Completed",
   };
   const [addForm, setAddForm] = useState({ ...emptyForm });
@@ -242,7 +243,11 @@ const Expense = () => {
 
   const openAdd = () => {
     setFormError(null);
-    setAddForm({ ...emptyForm, category_id: categoryOptions[0]?.value || "" });
+    setAddForm({
+      ...emptyForm,
+      category_id: categoryOptions[0]?.value || "",
+      payment_method: defaultPaymentMethod,
+    });
     setTimeout(() => showModal("add_expenses"), 0);
   };
 
@@ -257,7 +262,8 @@ const Expense = () => {
         expense_date: r.expense_date ? String(r.expense_date).slice(0, 10) : "",
         amount: r.amount != null ? String(r.amount) : "",
         invoice_no: r.invoice_no || "",
-        payment_method: r.payment_method && r.payment_method !== "Select" ? r.payment_method : "Cash",
+        payment_method:
+          r.payment_method && r.payment_method !== "Select" ? r.payment_method : defaultPaymentMethod,
         status: r.status === "Pending" ? "Pending" : "Completed",
       });
       setFormError(null);
@@ -757,9 +763,11 @@ const Expense = () => {
                       <label className="form-label">Payment Method</label>
                       <CommonSelect
                         className="select"
-                        options={paymentMethod}
+                        options={optionsIncluding(addForm.payment_method)}
                         value={addForm.payment_method}
-                        onChange={(v) => setAddForm((f) => ({ ...f, payment_method: v || "Cash" }))}
+                        onChange={(v) =>
+                          setAddForm((f) => ({ ...f, payment_method: v || defaultPaymentMethod }))
+                        }
                       />
                     </div>
                     <div className="mb-3">
@@ -879,9 +887,11 @@ const Expense = () => {
                       <label className="form-label">Payment Method</label>
                       <CommonSelect
                         className="select"
-                        options={paymentMethod}
+                        options={optionsIncluding(editForm.payment_method)}
                         value={editForm.payment_method}
-                        onChange={(v) => setEditForm((f) => ({ ...f, payment_method: v || "Cash" }))}
+                        onChange={(v) =>
+                          setEditForm((f) => ({ ...f, payment_method: v || defaultPaymentMethod }))
+                        }
                       />
                     </div>
                     <div className="mb-3">

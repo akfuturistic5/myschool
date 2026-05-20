@@ -1,34 +1,15 @@
 const { query, executeTransaction } = require('../config/database');
 const { resolveAcademicYearIdFromQuery } = require('../utils/libraryAcademicYear');
 const { parsePagination, listMeta, buildOrderClause } = require('../utils/accountsPagination');
+const {
+  sliceYmd,
+  resolveRequiredAcademicYearId,
+  assertCategoryUsable,
+  mapLedgerToIncome,
+  LEDGER_FROM,
+} = require('../utils/accountsFinancialLedger');
 
-function padCode(prefix, id) {
-  return `${prefix}${String(id).padStart(6, '0')}`;
-}
-
-function sliceYmd(s) {
-  if (s == null || String(s).trim() === '') return null;
-  return String(s).trim().slice(0, 10);
-}
-
-function mapIncomeRow(row) {
-  if (!row) return null;
-  const id = row.id;
-  return {
-    id,
-    income_code: padCode('I', id),
-    income_name: row.income_name,
-    description: row.description,
-    source: row.source,
-    income_date: row.income_date,
-    amount: row.amount != null ? Number(row.amount) : null,
-    invoice_no: row.invoice_no,
-    payment_method: row.payment_method,
-    academic_year_id: row.academic_year_id,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  };
-}
+const TX_TYPE = 'Income';
 
 const listIncome = async (req, res) => {
   try {
@@ -40,65 +21,66 @@ const listIncome = async (req, res) => {
     const { page, pageSize, limit, offset } = parsePagination(req.query);
 
     const params = [];
-    let where = 'WHERE 1=1';
+    let where = `WHERE fl.deleted_at IS NULL AND fl.transaction_type = '${TX_TYPE}'`;
     if (yearId != null) {
       params.push(yearId);
-      where += ` AND i.academic_year_id = $${params.length}`;
+      where += ` AND fl.academic_year_id = $${params.length}`;
     }
     if (search) {
       const p = `%${search}%`;
       params.push(p);
       const n = params.length;
       where += ` AND (
-        i.income_name ILIKE $${n}
-        OR COALESCE(i.description, '') ILIKE $${n}
-        OR COALESCE(i.source, '') ILIKE $${n}
-        OR COALESCE(i.invoice_no, '') ILIKE $${n}
+        fl.title ILIKE $${n}
+        OR COALESCE(fl.description, '') ILIKE $${n}
+        OR COALESCE(fl.source_reference, '') ILIKE $${n}
+        OR COALESCE(fl.invoice_no, '') ILIKE $${n}
       )`;
     }
     if (dateFrom) {
       params.push(dateFrom);
-      where += ` AND i.income_date >= $${params.length}::date`;
+      where += ` AND fl.transaction_date >= $${params.length}::date`;
     }
     if (dateTo) {
       params.push(dateTo);
-      where += ` AND i.income_date <= $${params.length}::date`;
+      where += ` AND fl.transaction_date <= $${params.length}::date`;
     }
     if (paymentMethod) {
       params.push(paymentMethod);
-      where += ` AND i.payment_method = $${params.length}`;
+      where += ` AND fl.payment_mode = $${params.length}`;
     }
 
-    const countR = await query(`SELECT COUNT(*)::int AS c FROM accounts_income i ${where}`, [...params]);
+    const countR = await query(`SELECT COUNT(*)::int AS c ${LEDGER_FROM} ${where}`, [...params]);
     const total = countR.rows[0].c;
 
     const orderSql = buildOrderClause(
       req.query,
       {
-        income_date: 'i.income_date',
-        amount: 'i.amount',
-        income_name: 'i.income_name',
-        invoice_no: 'i.invoice_no',
-        source: 'i.source',
-        payment_method: 'i.payment_method',
-        description: 'i.description',
-        id: 'i.id',
+        income_date: 'fl.transaction_date',
+        amount: 'fl.amount',
+        income_name: 'fl.title',
+        invoice_no: 'fl.invoice_no',
+        source: 'fl.source_reference',
+        payment_method: 'fl.payment_mode',
+        description: 'fl.description',
+        id: 'fl.id',
       },
       'income_date',
-      'i.id DESC'
+      'fl.id DESC'
     );
+
     const dataParams = [...params, limit, offset];
     const limIdx = dataParams.length - 1;
     const offIdx = dataParams.length;
     const r = await query(
-      `SELECT i.*
-       FROM accounts_income i
+      `SELECT fl.*, cat.category_name
+       ${LEDGER_FROM}
        ${where}
        ${orderSql}
        LIMIT $${limIdx} OFFSET $${offIdx}`,
       dataParams
     );
-    const data = r.rows.map(mapIncomeRow);
+    const data = r.rows.map(mapLedgerToIncome);
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Income records fetched',
@@ -118,11 +100,16 @@ const getIncome = async (req, res) => {
     if (!Number.isFinite(id)) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid id' });
     }
-    const r = await query(`SELECT * FROM accounts_income WHERE id = $1`, [id]);
+    const r = await query(
+      `SELECT fl.*, cat.category_name
+       ${LEDGER_FROM}
+       WHERE fl.id = $1 AND fl.deleted_at IS NULL AND fl.transaction_type = $2`,
+      [id, TX_TYPE]
+    );
     if (r.rows.length === 0) {
       return res.status(404).json({ status: 'ERROR', message: 'Income record not found' });
     }
-    res.status(200).json({ status: 'SUCCESS', message: 'OK', data: mapIncomeRow(r.rows[0]) });
+    res.status(200).json({ status: 'SUCCESS', message: 'OK', data: mapLedgerToIncome(r.rows[0]) });
   } catch (e) {
     console.error('accounts income get', e);
     res.status(500).json({ status: 'ERROR', message: 'Failed to get income record' });
@@ -131,48 +118,60 @@ const getIncome = async (req, res) => {
 
 const createIncome = async (req, res) => {
   try {
-    const yearId =
-      req.body.academic_year_id != null && req.body.academic_year_id !== ''
-        ? parseInt(req.body.academic_year_id, 10)
-        : await resolveAcademicYearIdFromQuery({ query: {} });
+    const yearId = await resolveRequiredAcademicYearId(req.body, await resolveAcademicYearIdFromQuery(req));
+    if (!Number.isFinite(yearId)) {
+      return res.status(400).json({ status: 'ERROR', message: 'academic_year_id is required' });
+    }
     const income_date = sliceYmd(req.body.income_date);
     if (!income_date) {
       return res.status(400).json({ status: 'ERROR', message: 'income_date is required' });
     }
 
+    const category_id = parseInt(req.body.category_id, 10);
+    if (!Number.isFinite(category_id)) {
+      return res.status(400).json({ status: 'ERROR', message: 'category_id is required' });
+    }
+
     const row = await executeTransaction(async (client) => {
+      await assertCategoryUsable(client, category_id, yearId, 'Income');
+
       const ins = await client.query(
-        `INSERT INTO accounts_income (
-           academic_year_id, income_name, description, source, income_date,
-           amount, invoice_no, payment_method, created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5::date, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `INSERT INTO financial_ledger (
+           academic_year_id, category_id, title, description, source_reference,
+           transaction_date, amount, transaction_type, payment_mode, invoice_no, status,
+           created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6::date, $7, $8, $9, $10, $11, NOW(), NOW())
          RETURNING *`,
         [
-          Number.isFinite(yearId) ? yearId : null,
+          yearId,
+          category_id,
           String(req.body.income_name).trim(),
           req.body.description != null ? String(req.body.description).trim() : null,
           req.body.source != null ? String(req.body.source).trim() : null,
           income_date,
           req.body.amount,
-          req.body.invoice_no != null ? String(req.body.invoice_no).trim() : null,
+          TX_TYPE,
           req.body.payment_method != null ? String(req.body.payment_method).trim() : null,
+          req.body.invoice_no != null ? String(req.body.invoice_no).trim() : null,
+          'Completed',
         ]
       );
-      const income = ins.rows[0];
-      await client.query(
-        `INSERT INTO accounts_transactions (
-           academic_year_id, description, transaction_date, amount, payment_method,
-           transaction_type, status, income_id, expense_id, created_at, updated_at
-         ) VALUES ($1, $2, $3::date, $4, $5, 'Income', 'Completed', $6, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-        [income.academic_year_id, income.income_name, income.income_date, income.amount, income.payment_method, income.id]
-      );
-      return income;
+      return ins.rows[0];
     });
 
-    res.status(201).json({ status: 'SUCCESS', message: 'Income created', data: mapIncomeRow(row) });
+    res.status(201).json({ status: 'SUCCESS', message: 'Income created', data: mapLedgerToIncome(row) });
   } catch (e) {
-    if (e.code === '23505') {
-      return res.status(409).json({ status: 'ERROR', message: 'Invoice number already exists for this academic year' });
+    if (e.code === 'CATEGORY_NOT_FOUND') {
+      return res.status(400).json({ status: 'ERROR', message: 'Category does not exist' });
+    }
+    if (e.code === 'CATEGORY_INACTIVE') {
+      return res.status(400).json({ status: 'ERROR', message: 'Category is inactive' });
+    }
+    if (e.code === 'CATEGORY_YEAR_MISMATCH') {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Category does not belong to the selected academic year',
+      });
     }
     console.error('accounts income create', e);
     res.status(500).json({ status: 'ERROR', message: 'Failed to create income record' });
@@ -186,19 +185,30 @@ const updateIncome = async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid id' });
     }
 
-    const existing = await query(`SELECT * FROM accounts_income WHERE id = $1`, [id]);
+    const existing = await query(
+      `SELECT * FROM financial_ledger WHERE id = $1 AND deleted_at IS NULL AND transaction_type = $2`,
+      [id, TX_TYPE]
+    );
     if (existing.rows.length === 0) {
       return res.status(404).json({ status: 'ERROR', message: 'Income record not found' });
     }
 
     const cur = existing.rows[0];
-    const income_name = req.body.income_name != null ? String(req.body.income_name).trim() : cur.income_name;
+    const title = req.body.income_name != null ? String(req.body.income_name).trim() : cur.title;
     const description =
-      req.body.description !== undefined ? (req.body.description != null ? String(req.body.description).trim() : null) : cur.description;
-    const source =
-      req.body.source !== undefined ? (req.body.source != null ? String(req.body.source).trim() : null) : cur.source;
-    const income_date =
-      req.body.income_date != null ? sliceYmd(req.body.income_date) || cur.income_date : cur.income_date;
+      req.body.description !== undefined
+        ? req.body.description != null
+          ? String(req.body.description).trim()
+          : null
+        : cur.description;
+    const source_reference =
+      req.body.source !== undefined
+        ? req.body.source != null
+          ? String(req.body.source).trim()
+          : null
+        : cur.source_reference;
+    const transaction_date =
+      req.body.income_date != null ? sliceYmd(req.body.income_date) || cur.transaction_date : cur.transaction_date;
     const amount = req.body.amount != null ? req.body.amount : cur.amount;
     const invoice_no =
       req.body.invoice_no !== undefined
@@ -206,53 +216,78 @@ const updateIncome = async (req, res) => {
           ? String(req.body.invoice_no).trim()
           : null
         : cur.invoice_no;
-    const payment_method =
+    const payment_mode =
       req.body.payment_method !== undefined
         ? req.body.payment_method != null
           ? String(req.body.payment_method).trim()
           : null
-        : cur.payment_method;
+        : cur.payment_mode;
     const academic_year_id =
       req.body.academic_year_id !== undefined
         ? req.body.academic_year_id != null && req.body.academic_year_id !== ''
           ? parseInt(req.body.academic_year_id, 10)
-          : null
+          : cur.academic_year_id
         : cur.academic_year_id;
+    const category_id =
+      req.body.category_id !== undefined
+        ? req.body.category_id != null && req.body.category_id !== ''
+          ? parseInt(req.body.category_id, 10)
+          : null
+        : cur.category_id;
 
     await executeTransaction(async (client) => {
-      await client.query(
-        `UPDATE accounts_income SET
-           income_name = $1,
-           description = $2,
-           source = $3,
-           income_date = $4::date,
-           amount = $5,
-           invoice_no = $6,
-           payment_method = $7,
-           academic_year_id = $8,
-           updated_at = CURRENT_TIMESTAMP
-         WHERE id = $9`,
-        [income_name, description, source, income_date, amount, invoice_no, payment_method, academic_year_id, id]
-      );
+      if (Number.isFinite(category_id)) {
+        await assertCategoryUsable(client, category_id, academic_year_id, 'Income');
+      }
 
       await client.query(
-        `UPDATE accounts_transactions SET
-           description = $1,
-           transaction_date = $2::date,
-           amount = $3,
-           payment_method = $4,
-           academic_year_id = $5,
-           updated_at = CURRENT_TIMESTAMP
-         WHERE income_id = $6`,
-        [income_name, income_date, amount, payment_method, academic_year_id, id]
+        `UPDATE financial_ledger SET
+           title = $1,
+           description = $2,
+           source_reference = $3,
+           transaction_date = $4::date,
+           amount = $5,
+           invoice_no = $6,
+           payment_mode = $7,
+           academic_year_id = $8,
+           category_id = $9,
+           updated_at = NOW()
+         WHERE id = $10 AND deleted_at IS NULL AND transaction_type = $11`,
+        [
+          title,
+          description,
+          source_reference,
+          transaction_date,
+          amount,
+          invoice_no,
+          payment_mode,
+          academic_year_id,
+          Number.isFinite(category_id) ? category_id : null,
+          id,
+          TX_TYPE,
+        ]
       );
     });
 
-    const r = await query(`SELECT * FROM accounts_income WHERE id = $1`, [id]);
-    res.status(200).json({ status: 'SUCCESS', message: 'Income updated', data: mapIncomeRow(r.rows[0]) });
+    const r = await query(
+      `SELECT fl.*, cat.category_name
+       ${LEDGER_FROM}
+       WHERE fl.id = $1 AND fl.deleted_at IS NULL`,
+      [id]
+    );
+    res.status(200).json({ status: 'SUCCESS', message: 'Income updated', data: mapLedgerToIncome(r.rows[0]) });
   } catch (e) {
-    if (e.code === '23505') {
-      return res.status(409).json({ status: 'ERROR', message: 'Invoice number already exists for this academic year' });
+    if (e.code === 'CATEGORY_NOT_FOUND') {
+      return res.status(400).json({ status: 'ERROR', message: 'Category does not exist' });
+    }
+    if (e.code === 'CATEGORY_INACTIVE') {
+      return res.status(400).json({ status: 'ERROR', message: 'Category is inactive' });
+    }
+    if (e.code === 'CATEGORY_YEAR_MISMATCH') {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Category does not belong to the selected academic year',
+      });
     }
     console.error('accounts income update', e);
     res.status(500).json({ status: 'ERROR', message: 'Failed to update income record' });
@@ -265,17 +300,18 @@ const deleteIncome = async (req, res) => {
     if (!Number.isFinite(id)) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid id' });
     }
-    await executeTransaction(async (client) => {
-      const del = await client.query(`DELETE FROM accounts_income WHERE id = $1 RETURNING id`, [id]);
-      if (del.rows.length === 0) {
-        throw Object.assign(new Error('NOT_FOUND'), { code: 'NOT_FOUND' });
-      }
-    });
-    res.status(200).json({ status: 'SUCCESS', message: 'Income deleted', data: { id } });
-  } catch (e) {
-    if (e.code === 'NOT_FOUND') {
+    const del = await query(
+      `UPDATE financial_ledger
+       SET deleted_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND deleted_at IS NULL AND transaction_type = $2
+       RETURNING id`,
+      [id, TX_TYPE]
+    );
+    if (del.rows.length === 0) {
       return res.status(404).json({ status: 'ERROR', message: 'Income record not found' });
     }
+    res.status(200).json({ status: 'SUCCESS', message: 'Income deleted', data: { id } });
+  } catch (e) {
     console.error('accounts income delete', e);
     res.status(500).json({ status: 'ERROR', message: 'Failed to delete income record' });
   }
