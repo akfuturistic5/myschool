@@ -71,7 +71,7 @@ import AccountsTransactions from "../accounts/accounts-transactions";
 import AddInvoice from "../accounts/add-invoice";
 import EditInvoice from "../accounts/edit-invoice";
 import Expense from "../accounts/expense";
-import ExpensesCategory from "../accounts/expenses-category";
+import AccountCategories from "../accounts/account-categories";
 import Invoice from "../accounts/invoice";
 import Events from "../announcements/events";
 import NoticeBoard from "../announcements/notice-board";
@@ -1352,8 +1352,8 @@ export const publicRoutes = [
     route: Route,
   },
   {
-    path: routes.expenseCategory,
-    element: guardAccountsModule(<ExpensesCategory />),
+    path: routes.accountCategories,
+    element: guardAccountsModule(<AccountCategories />),
     route: Route,
   },
   {

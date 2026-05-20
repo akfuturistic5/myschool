@@ -57,8 +57,28 @@ const updateInvoiceSchema = Joi.object({
   academic_year_id: Joi.number().integer().positive().allow(null),
 }).min(1);
 
+const categoryTypeField = Joi.string().valid('Income', 'Expense');
+
+const createAccountCategorySchema = Joi.object({
+  category_name: Joi.string().trim().min(1).max(255).required(),
+  category_type: categoryTypeField.required(),
+  description: Joi.string().trim().max(5000).allow(null, ''),
+  academic_year_id: Joi.number().integer().positive().allow(null),
+  is_active: Joi.boolean().optional(),
+});
+
+const updateAccountCategorySchema = Joi.object({
+  category_name: Joi.string().trim().min(1).max(255).optional(),
+  category_type: categoryTypeField.optional(),
+  description: Joi.string().trim().max(5000).allow(null, ''),
+  academic_year_id: Joi.number().integer().positive().allow(null),
+  is_active: Joi.boolean().optional(),
+}).min(1);
+
+/** Legacy expense-categories route: type is forced to Expense on the server. */
 const createExpenseCategorySchema = Joi.object({
   category_name: Joi.string().trim().min(1).max(255).required(),
+  category_type: categoryTypeField.optional(),
   description: Joi.string().trim().max(5000).allow(null, ''),
   academic_year_id: Joi.number().integer().positive().allow(null),
   is_active: Joi.boolean().optional(),
@@ -66,6 +86,7 @@ const createExpenseCategorySchema = Joi.object({
 
 const updateExpenseCategorySchema = Joi.object({
   category_name: Joi.string().trim().min(1).max(255).optional(),
+  category_type: categoryTypeField.optional(),
   description: Joi.string().trim().max(5000).allow(null, ''),
   academic_year_id: Joi.number().integer().positive().allow(null),
   is_active: Joi.boolean().optional(),
@@ -100,6 +121,8 @@ module.exports = {
   updateIncomeSchema,
   createInvoiceSchema,
   updateInvoiceSchema,
+  createAccountCategorySchema,
+  updateAccountCategorySchema,
   createExpenseCategorySchema,
   updateExpenseCategorySchema,
   createExpenseSchema,

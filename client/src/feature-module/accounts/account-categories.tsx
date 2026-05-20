@@ -3,9 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 import Table from "../../core/common/dataTable/index";
-import CommonSelect from "../../core/common/commonSelect";
-import PredefinedDateRanges from "../../core/common/datePicker";
-import { category2 } from "../../core/common/selectoption/selectoption";
 import { all_routes } from "../router/all_routes";
 import TooltipOption from "../../core/common/tooltipOption";
 import { apiService } from "../../core/services/apiService";
@@ -15,17 +12,30 @@ import { fetchAllAccountsPages, parseAccountsListResponse } from "./accountsList
 import { exportAccountsExcel, exportAccountsPdf, printAccountsData } from "./accountsExportUtils";
 import { createAccountsTableChangeHandler } from "./accountsTableHandlers";
 
+const TYPE_OPTIONS = [
+  { value: "", label: "All Types" },
+  { value: "Income", label: "Income" },
+  { value: "Expense", label: "Expense" },
+];
+
+const FORM_TYPE_OPTIONS = [
+  { value: "Income", label: "Income" },
+  { value: "Expense", label: "Expense" },
+];
+
 function mapCategoryToRow(c: any) {
   return {
     key: c.id,
     raw: c,
     id: String(c.id),
     category: c.category_name ?? "",
+    categoryType: c.category_type ?? "",
     description: c.description ?? "",
+    isActive: c.is_active === false ? "Inactive" : "Active",
   };
 }
 
-const ExpensesCategory = () => {
+const AccountCategories = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const [rows, setRows] = useState<any[]>([]);
@@ -36,8 +46,7 @@ const ExpensesCategory = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
-  const [appliedSearch, setAppliedSearch] = useState("");
-  const [filterCategory, setFilterCategory] = useState<string | null>("Select");
+  const [filterType, setFilterType] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
   const [sortBy, setSortBy] = useState("");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -47,14 +56,19 @@ const ExpensesCategory = () => {
 
   const categoryListParams = useMemo(
     () => ({
-      search: appliedSearch.trim() || undefined,
+      category_type: filterType || undefined,
       ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
       ...(sortBy ? { sort_by: sortBy, sort_order: sortDir } : {}),
     }),
-    [appliedSearch, academicYearId, sortBy, sortDir]
+    [filterType, academicYearId, sortBy, sortDir]
   );
 
-  const emptyForm = { category_name: "", description: "" as string };
+  const emptyForm = {
+    category_name: "",
+    category_type: "Expense",
+    description: "" as string,
+    is_active: true,
+  };
   const [addForm, setAddForm] = useState({ ...emptyForm });
   const [editForm, setEditForm] = useState({ ...emptyForm });
 
@@ -80,7 +94,7 @@ const ExpensesCategory = () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await apiService.getAccountsExpenseCategories({
+      const res = await apiService.getAccountsCategories({
         ...categoryListParams,
         page,
         page_size: pageSize,
@@ -111,43 +125,51 @@ const ExpensesCategory = () => {
   const catExportCols = [
     { key: "id", header: "ID" },
     { key: "category_name", header: "Category" },
+    { key: "category_type", header: "Type" },
     { key: "description", header: "Description" },
+    { key: "is_active", header: "Status" },
   ];
 
   const runExportExcel = async () => {
     const list = await fetchAllAccountsPages<Record<string, unknown>>(async (p) =>
-      apiService.getAccountsExpenseCategories({ ...categoryListParams, ...p })
+      apiService.getAccountsCategories({ ...categoryListParams, ...p })
     );
     const flat = list.map((r) => ({
       id: r.id ?? "",
       category_name: r.category_name ?? "",
+      category_type: r.category_type ?? "",
       description: r.description ?? "",
+      is_active: r.is_active === false ? "Inactive" : "Active",
     }));
-    exportAccountsExcel(flat, catExportCols, "expense-categories");
+    exportAccountsExcel(flat, catExportCols, "account-categories");
   };
 
   const runExportPdf = async () => {
     const list = await fetchAllAccountsPages<Record<string, unknown>>(async (p) =>
-      apiService.getAccountsExpenseCategories({ ...categoryListParams, ...p })
+      apiService.getAccountsCategories({ ...categoryListParams, ...p })
     );
     const flat = list.map((r) => ({
       id: r.id ?? "",
       category_name: r.category_name ?? "",
+      category_type: r.category_type ?? "",
       description: r.description ?? "",
+      is_active: r.is_active === false ? "Inactive" : "Active",
     }));
-    exportAccountsPdf(flat, catExportCols, "expense-categories", "Expense categories");
+    exportAccountsPdf(flat, catExportCols, "account-categories", "Account categories");
   };
 
   const runPrint = async () => {
     const list = await fetchAllAccountsPages<Record<string, unknown>>(async (p) =>
-      apiService.getAccountsExpenseCategories({ ...categoryListParams, ...p })
+      apiService.getAccountsCategories({ ...categoryListParams, ...p })
     );
     const flat = list.map((r) => ({
       id: r.id ?? "",
       category_name: r.category_name ?? "",
+      category_type: r.category_type ?? "",
       description: r.description ?? "",
+      is_active: r.is_active === false ? "Inactive" : "Active",
     }));
-    printAccountsData("Expense categories", catExportCols, flat);
+    printAccountsData("Account categories", catExportCols, flat);
   };
 
   useEffect(() => {
@@ -157,7 +179,7 @@ const ExpensesCategory = () => {
   const openAdd = () => {
     setFormError(null);
     setAddForm({ ...emptyForm });
-    setTimeout(() => showModal("add_expenses_category"), 0);
+    setTimeout(() => showModal("add_account_category"), 0);
   };
 
   const openEdit = useCallback((record: any) => {
@@ -165,10 +187,12 @@ const ExpensesCategory = () => {
     setSelectedRecord(record);
     setEditForm({
       category_name: r.category_name || "",
+      category_type: r.category_type === "Income" ? "Income" : "Expense",
       description: r.description || "",
+      is_active: r.is_active !== false,
     });
     setFormError(null);
-    setTimeout(() => showModal("edit_expenses_category"), 0);
+    setTimeout(() => showModal("edit_account_category"), 0);
   }, []);
 
   const openDelete = useCallback((record: any) => {
@@ -199,6 +223,20 @@ const ExpensesCategory = () => {
         sortOrder: sortOrderFor("category_name"),
       },
       {
+        title: "Type",
+        dataIndex: "categoryType",
+        key: "category_type",
+        sorter: true,
+        sortOrder: sortOrderFor("category_type"),
+        render: (text: string) => (
+          <span
+            className={`badge ${text === "Income" ? "badge-soft-success" : "badge-soft-danger"}`}
+          >
+            {text || "—"}
+          </span>
+        ),
+      },
+      {
         title: "Description",
         dataIndex: "description",
         key: "description",
@@ -206,52 +244,55 @@ const ExpensesCategory = () => {
         sortOrder: sortOrderFor("description"),
       },
       {
+        title: "Status",
+        dataIndex: "isActive",
+        key: "is_active",
+      },
+      {
         title: "Action",
         dataIndex: "action",
         key: "_action",
         render: (_: any, record: any) => (
-          <>
-            <div className="d-flex align-items-center">
-              <div className="dropdown">
-                <Link
-                  to="#"
-                  className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                  data-bs-toggle="dropdown"
-                  aria-expanded="false"
-                >
-                  <i className="ti ti-dots-vertical fs-14" />
-                </Link>
-                <ul className="dropdown-menu dropdown-menu-end p-2">
-                  <li>
-                    <Link
-                      className="dropdown-item rounded-1"
-                      to="#"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        openEdit(record);
-                      }}
-                    >
-                      <i className="ti ti-edit-circle me-2" />
-                      Edit
-                    </Link>
-                  </li>
-                  <li>
-                    <Link
-                      className="dropdown-item rounded-1"
-                      to="#"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        openDelete(record);
-                      }}
-                    >
-                      <i className="ti ti-trash-x me-2" />
-                      Delete
-                    </Link>
-                  </li>
-                </ul>
-              </div>
+          <div className="d-flex align-items-center">
+            <div className="dropdown">
+              <Link
+                to="#"
+                className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+              >
+                <i className="ti ti-dots-vertical fs-14" />
+              </Link>
+              <ul className="dropdown-menu dropdown-menu-end p-2">
+                <li>
+                  <Link
+                    className="dropdown-item rounded-1"
+                    to="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      openEdit(record);
+                    }}
+                  >
+                    <i className="ti ti-edit-circle me-2" />
+                    Edit
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    className="dropdown-item rounded-1"
+                    to="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      openDelete(record);
+                    }}
+                  >
+                    <i className="ti ti-trash-x me-2" />
+                    Delete
+                  </Link>
+                </li>
+              </ul>
             </div>
-          </>
+          </div>
         ),
       },
     ],
@@ -260,19 +301,24 @@ const ExpensesCategory = () => {
 
   const onFilterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const v = filterCategory && filterCategory !== "Select" ? filterCategory : "";
-    setAppliedSearch(v.trim());
     setPage(1);
     document.body.click();
   };
 
   const onFilterReset = (e: React.MouseEvent) => {
     e.preventDefault();
-    setFilterCategory("Select");
-    setAppliedSearch("");
+    setFilterType("");
     setPage(1);
     document.body.click();
   };
+
+  const buildPayload = (form: typeof emptyForm) => ({
+    category_name: form.category_name.trim(),
+    category_type: form.category_type,
+    description: form.description.trim() || null,
+    is_active: form.is_active,
+    ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
+  });
 
   const submitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -284,12 +330,13 @@ const ExpensesCategory = () => {
         setSaving(false);
         return;
       }
-      await apiService.createAccountsExpenseCategory({
-        category_name: addForm.category_name.trim(),
-        description: addForm.description.trim() || null,
-        ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
-      });
-      hideModal("add_expenses_category");
+      if (!addForm.category_type) {
+        setFormError("Category type is required.");
+        setSaving(false);
+        return;
+      }
+      await apiService.createAccountsCategory(buildPayload(addForm));
+      hideModal("add_account_category");
       setAddForm({ ...emptyForm });
       await load();
     } catch (err: unknown) {
@@ -311,12 +358,8 @@ const ExpensesCategory = () => {
         setSaving(false);
         return;
       }
-      await apiService.updateAccountsExpenseCategory(id, {
-        category_name: editForm.category_name.trim(),
-        description: editForm.description.trim() || null,
-        ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
-      });
-      hideModal("edit_expenses_category");
+      await apiService.updateAccountsCategory(id, buildPayload(editForm));
+      hideModal("edit_account_category");
       await load();
     } catch (err: unknown) {
       setFormError(getAccountsErrorMessage(err, "Could not update category."));
@@ -332,7 +375,7 @@ const ExpensesCategory = () => {
     setSaving(true);
     setFormError(null);
     try {
-      await apiService.deleteAccountsExpenseCategory(id);
+      await apiService.deleteAccountsCategory(id);
       hideModal("delete-modal");
       setSelectedRecord(null);
       await load();
@@ -345,14 +388,11 @@ const ExpensesCategory = () => {
 
   return (
     <div>
-      {" "}
-      {/* Page Wrapper */}
       <div className="page-wrapper">
         <div className="content">
-          {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
-              <h3 className="page-title mb-1">Expense Category</h3>
+              <h3 className="page-title mb-1">Account Categories</h3>
               <nav>
                 <ol className="breadcrumb mb-0">
                   <li className="breadcrumb-item">
@@ -362,18 +402,18 @@ const ExpensesCategory = () => {
                     <Link to="#">Finance &amp; Accounts</Link>
                   </li>
                   <li className="breadcrumb-item active" aria-current="page">
-                    Expense Category
+                    Categories
                   </li>
                 </ol>
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-            <TooltipOption
-              onRefresh={load}
-              onPrint={runPrint}
-              onExportPdf={runExportPdf}
-              onExportExcel={runExportExcel}
-            />
+              <TooltipOption
+                onRefresh={load}
+                onPrint={runPrint}
+                onExportPdf={runExportPdf}
+                onExportExcel={runExportExcel}
+              />
               <div className="mb-2">
                 <Link
                   to="#"
@@ -389,17 +429,36 @@ const ExpensesCategory = () => {
               </div>
             </div>
           </div>
-          {/* /Page Header */}
+
           {loadError && (
             <div className="alert alert-danger" role="alert">
               {loadError}
             </div>
           )}
+
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-              <h4 className="mb-3">Expense Category List</h4>
-              <div className="d-flex align-items-center flex-wrap">
-              </div>
+              <h4 className="mb-3">Category List</h4>
+              <form className="d-flex align-items-center flex-wrap gap-2 mb-3" onSubmit={onFilterSubmit}>
+                <select
+                  className="form-select form-select-sm"
+                  style={{ minWidth: "140px" }}
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value)}
+                >
+                  {TYPE_OPTIONS.map((opt) => (
+                    <option key={opt.value || "all"} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <button type="submit" className="btn btn-sm btn-primary">
+                  Apply
+                </button>
+                <button type="button" className="btn btn-sm btn-light" onClick={onFilterReset}>
+                  Reset
+                </button>
+              </form>
             </div>
             <div className="card-body p-0 py-3">
               {formError && (
@@ -430,13 +489,12 @@ const ExpensesCategory = () => {
           </div>
         </div>
       </div>
-      {/* /Page Wrapper */}
-      {/* Add */}
-      <div className="modal fade" id="add_expenses_category">
+
+      <div className="modal fade" id="add_account_category">
         <div className="modal-dialog modal-dialog-centered">
           <div className="modal-content">
             <div className="modal-header">
-              <h4 className="modal-title">Add Expense Category</h4>
+              <h4 className="modal-title">Add Category</h4>
               <button
                 type="button"
                 className="btn-close custom-btn-close"
@@ -449,7 +507,27 @@ const ExpensesCategory = () => {
             <form onSubmit={submitAdd}>
               <div className="modal-body">
                 <div className="mb-3">
-                  <label className="form-label">Category Name</label>
+                  <label className="form-label">
+                    Category Type <span className="text-danger">*</span>
+                  </label>
+                  <select
+                    className="form-select"
+                    value={addForm.category_type}
+                    onChange={(e) =>
+                      setAddForm((f) => ({ ...f, category_type: e.target.value as "Income" | "Expense" }))
+                    }
+                  >
+                    {FORM_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">
+                    Category Name <span className="text-danger">*</span>
+                  </label>
                   <input
                     type="text"
                     className="form-control"
@@ -457,7 +535,7 @@ const ExpensesCategory = () => {
                     onChange={(e) => setAddForm((f) => ({ ...f, category_name: e.target.value }))}
                   />
                 </div>
-                <div className="mb-0">
+                <div className="mb-3">
                   <label className="form-label">Description</label>
                   <textarea
                     rows={3}
@@ -465,6 +543,18 @@ const ExpensesCategory = () => {
                     value={addForm.description}
                     onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))}
                   />
+                </div>
+                <div className="form-check form-switch mb-0">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    id="add_category_active"
+                    checked={addForm.is_active}
+                    onChange={(e) => setAddForm((f) => ({ ...f, is_active: e.target.checked }))}
+                  />
+                  <label className="form-check-label" htmlFor="add_category_active">
+                    Active
+                  </label>
                 </div>
               </div>
               <div className="modal-footer">
@@ -479,12 +569,12 @@ const ExpensesCategory = () => {
           </div>
         </div>
       </div>
-      {/* Edit */}
-      <div className="modal fade" id="edit_expenses_category">
+
+      <div className="modal fade" id="edit_account_category">
         <div className="modal-dialog modal-dialog-centered">
           <div className="modal-content">
             <div className="modal-header">
-              <h4 className="modal-title">Edit Expense Category</h4>
+              <h4 className="modal-title">Edit Category</h4>
               <button
                 type="button"
                 className="btn-close custom-btn-close"
@@ -497,7 +587,27 @@ const ExpensesCategory = () => {
             <form onSubmit={submitEdit}>
               <div className="modal-body">
                 <div className="mb-3">
-                  <label className="form-label">Category Name</label>
+                  <label className="form-label">
+                    Category Type <span className="text-danger">*</span>
+                  </label>
+                  <select
+                    className="form-select"
+                    value={editForm.category_type}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, category_type: e.target.value as "Income" | "Expense" }))
+                    }
+                  >
+                    {FORM_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">
+                    Category Name <span className="text-danger">*</span>
+                  </label>
                   <input
                     type="text"
                     className="form-control"
@@ -505,7 +615,7 @@ const ExpensesCategory = () => {
                     onChange={(e) => setEditForm((f) => ({ ...f, category_name: e.target.value }))}
                   />
                 </div>
-                <div className="mb-0">
+                <div className="mb-3">
                   <label className="form-label">Description</label>
                   <textarea
                     rows={3}
@@ -513,6 +623,18 @@ const ExpensesCategory = () => {
                     value={editForm.description}
                     onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
                   />
+                </div>
+                <div className="form-check form-switch mb-0">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    id="edit_category_active"
+                    checked={editForm.is_active}
+                    onChange={(e) => setEditForm((f) => ({ ...f, is_active: e.target.checked }))}
+                  />
+                  <label className="form-check-label" htmlFor="edit_category_active">
+                    Active
+                  </label>
                 </div>
               </div>
               <div className="modal-footer">
@@ -527,6 +649,7 @@ const ExpensesCategory = () => {
           </div>
         </div>
       </div>
+
       <div className="modal fade" id="delete-modal">
         <div className="modal-dialog modal-dialog-centered">
           <div className="modal-content">
@@ -536,10 +659,7 @@ const ExpensesCategory = () => {
                   <i className="ti ti-trash-x" />
                 </span>
                 <h4>Confirm Deletion</h4>
-                <p>
-                  You want to delete all the marked items, this cant be undone
-                  once you delete.
-                </p>
+                <p>This category will be removed. This action cannot be undone.</p>
                 <div className="d-flex justify-content-center">
                   <Link to="#" className="btn btn-light me-3" data-bs-dismiss="modal">
                     Cancel
@@ -557,5 +677,4 @@ const ExpensesCategory = () => {
   );
 };
 
-export default ExpensesCategory;
-
+export default AccountCategories;

@@ -83,7 +83,7 @@ const listTransactions = async (req, res) => {
 
     const baseFrom = `FROM accounts_transactions t
       LEFT JOIN accounts_expenses e ON e.id = t.expense_id
-      LEFT JOIN accounts_expense_categories cat ON cat.id = e.category_id
+      LEFT JOIN account_categories cat ON cat.id = e.category_id AND cat.deleted_at IS NULL
       ${where}`;
 
     const orderSql = buildOrderClause(
@@ -139,7 +139,7 @@ const getTransaction = async (req, res) => {
       `SELECT t.*, e.category_id AS expense_category_id, cat.category_name
        FROM accounts_transactions t
        LEFT JOIN accounts_expenses e ON e.id = t.expense_id
-       LEFT JOIN accounts_expense_categories cat ON cat.id = e.category_id
+       LEFT JOIN account_categories cat ON cat.id = e.category_id AND cat.deleted_at IS NULL
        WHERE t.id = $1`,
       [id]
     );
