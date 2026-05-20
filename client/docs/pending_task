@@ -1,0 +1,603 @@
+PENDING AND PARTIAL WORK DOCUMENT
+MySchool Multi Tenant School Management System
+Analysis date: 18 May 2026
+Based on actual code only
+
+
+HOW TO READ THIS DOCUMENT
+
+Status Partial means kuch kaam ho chuka hai lekin module poora complete nahi hai.
+Status Pending means shuru hi nahi hua ya sirf template ya mock data hai.
+
+Har module ke neeche teen sections hain
+What works today jo abhi chal raha hai
+Backend API pending server par kya missing hai
+UI pending screen buttons menu par kya missing hai
+
+Priority High Medium Low team planning ke liye
+
+
+================================================================================
+PEOPLE MANAGEMENT
+================================================================================
+
+Module Name: Teacher Management
+Status: Partial
+Priority: Medium
+
+What works today
+UI par teacher grid list add form edit details assignments routine leaves library screens chalte hain. API se create read update hota hai.
+
+Backend API pending
+DELETE /api/teachers/:id route nahi hai. teacherRoutes me sirf create get put hai.
+
+UI pending
+File teacher-grid/index.tsx aur teacher-list/index.tsx me Delete menu item disabled hai label Coming soon.
+Export PDF Excel Print bhi teacher-list par disabled Coming soon.
+teacherModal.tsx me delete modal template hai lekin koi API call nahi.
+Teacher salary page teacher-details/teacherSalary.tsx abhi bhi JSON file salarydata use karti hai API nahi.
+
+
+Module Name: Parent Management
+Status: Partial
+Priority: Medium
+
+What works today
+Parent grid list add modals parent dashboard child fees attendance exams API se chalte hain.
+
+Backend API pending
+DELETE /api/parents/:id route nahi hai.
+
+UI pending
+Parent grid aur list par delete button ya delete flow nahi mila code me.
+Agar product ko parent hataana hai to delete button aur confirm modal banana hoga API ke baad.
+
+
+Module Name: Guardian Management
+Status: Partial
+Priority: High
+
+What works today
+Guardian grid list aur guardian dashboard par ward fees leaves API data dikhta hai.
+
+Backend API pending
+DELETE /api/guardians/:id route nahi hai.
+
+UI pending
+sidebarDataUtils.tsx me buildGuardianSidebar function nahi hai.
+Guardian login ke baad menu me sirf Guardian Dashboard aur Application submenu dikhta hai.
+Parent jaisa menu nahi hai jisme child profile fees attendance exams timetable links hon.
+User ko child pages ke liye URL manually type karna pad sakta hai.
+Guardian grid list par bhi delete flow nahi hai.
+
+
+================================================================================
+HRM
+================================================================================
+
+Module Name: Designations
+Status: Partial
+Priority: Low
+
+What works today
+Page hrm/designation/index.tsx useDesignations se list create edit API se chalti hai.
+
+Backend API pending
+DELETE /api/designations/:id route export nahi hai designationRoutes me.
+
+UI pending
+Delete dropdown item hai jo delete-modal kholta hai.
+Modal me Yes Delete button sirf modal band karta hai data-bs-dismiss modal. Koi apiService.deleteDesignation call nahi.
+Delete ko API se jodna hoga tab UI button kaam karega.
+
+
+Module Name: Staff Profile Payroll Tab
+Status: Partial
+Priority: Medium
+
+What works today
+Main payroll page hrm/payroll/index.tsx usePayroll se live payslips dikhata hai generate delete bulk.
+
+Backend API pending
+API hai GET /api/payroll list. Staff id filter se profile tab ke liye use ho sakta hai par UI call nahi karti.
+
+UI pending
+File hrm/staff-list/staff-payroll.tsx/index.tsx poori table staff-payroll JSON se bharti hai.
+Staff profile se Payroll tab par dummy salary rows dikhengi real payslip history nahi.
+Hook usePayroll ya apiService.getPayrollList staffId ke sath wire karna hoga.
+
+
+================================================================================
+FINANCE
+================================================================================
+
+Module Name: Accounts Transactions
+Status: Partial
+Priority: Low
+
+What works today
+Page accounts/accounts-transactions.tsx transactions API se read karke list dikhata hai export bhi hai.
+
+Backend API pending
+/api/accounts/transactions sirf read only hai. Create update delete transaction routes nahi.
+
+UI pending
+Screen par sirf dekhna aur export hai. Naya transaction add karne ka form ya button nahi.
+Agar ledger entry add karni hai to naya form aur API dono banenge.
+
+
+================================================================================
+USER MANAGEMENT
+================================================================================
+
+Module Name: Manage Users
+Status: Partial
+Priority: Medium
+
+What works today
+Page userManagement/manageusers.tsx useUsers se user list dikhata hai export print.
+
+Backend API pending
+POST PUT /api/users nahi. Sirf list get check-unique delete-requests.
+Naya user tab banta hai jab student teacher parent staff create karte ho.
+
+UI pending
+Add User button comment out hai manageusers.tsx line 142 se 150.
+User edit credentials ya role change karne ka screen nahi.
+Sirf list aur export available hai.
+
+
+Module Name: Permissions Screen
+Status: Pending
+Priority: Medium
+
+What works today
+Page userManagement/permission.tsx dikhti hai sidebar se.
+
+Backend API pending
+Database permissions table aur enforce middleware nahi. Sirf role groups roles.js me.
+
+UI pending
+Poora page static JSON file core/data/json/permission se data dikhata hai.
+Koi save button API se connect nahi.
+Checkbox change karne se server par kuch save nahi hota.
+Roles and permissions page rolesPermissions.tsx alag hai jo custom roles ke liye API use karti hai wo completed doc me hai.
+
+
+================================================================================
+ACADEMIC
+================================================================================
+
+Module Name: Class Homework
+Status: Pending
+Priority: High
+
+What works today
+Sidebar me link ho sakta hai lekin data real nahi.
+
+Backend API pending
+Tables homework aur homework_submissions tenant schema me hain.
+server/src me koi homework routes ya controller nahi.
+
+UI pending
+Page academic/class-home-work/index.tsx sirf JSON class_home_work import karti hai.
+Add edit delete homework forms API call nahi karte.
+Teacher assign homework screen ka flow nahi.
+Student parent portal par homework view submit screen nahi.
+
+
+Module Name: Academic Reason Master
+Status: Pending
+Priority: Low
+
+What works today
+Page academic/academic-reason/index.tsx template table dikhati hai.
+
+Backend API pending
+Koi /api/academic-reason ya similar route nahi.
+
+UI pending
+File academic-reason/index.tsx JSON AcademiReason use karti hai.
+Add reason modal save API par nahi jata.
+Promotion ya discipline me reason dropdown API se nahi aata.
+
+
+================================================================================
+APPLICATION AND COMMUNICATION
+================================================================================
+
+Module Name: Calendar Page
+Status: Partial
+Priority: Medium
+
+What works today
+Backend /api/calendar hai. Hook useCalendarEvents.js bana hua hai.
+
+Backend API pending
+API ready hai. Koi gap nahi backend par is page ke liye.
+
+UI pending
+File mainMenu/apps/calendar.tsx me calendarEvents hardcoded empty array useMemo.
+useCalendarEvents import hi nahi hai is page par.
+User Calendar menu se khulega to hamesha khali calendar dikhega.
+Events school events se alag hai wo announcements/events par completed hai.
+
+
+Module Name: Chat Extra Features
+Status: Partial
+Priority: Low
+
+What works today
+Chat list messages bhejna API se kaam karta hai application/chat.tsx.
+
+Backend API pending
+Group create invite disappearing messages ke liye alag endpoints shayad nahi ya incomplete.
+
+UI pending
+chat.tsx me alert Coming soon
+Disappearing messages
+Create Group
+Invite Others
+Ye buttons dabane par sirf alert aata hai koi modal flow nahi.
+
+
+Module Name: Teacher Dashboard Syllabus Widget
+Status: Partial
+Priority: Low
+
+What works today
+Class syllabus module alag se completed hai academic/class-syllabus par.
+
+Backend API pending
+useClassSyllabus API ready hai.
+
+UI pending
+teacherDashboard/index.tsx me syllabusData khali array hai.
+useClassSyllabus import commented hai.
+Dashboard par Syllabus section blank dikhega.
+
+
+================================================================================
+SETTINGS
+================================================================================
+
+Module Name: Extended Settings Pages
+Status: Partial
+Priority: Medium
+
+What works today
+Core settings completed doc me hain schoolSettings religion examType masters paymentModes invoiceSettings.
+
+Backend API pending
+In template pages ke liye alag APIs mostly nahi. Kuch chize /api/settings key value se ho sakti hain par UI wired nahi.
+
+UI pending
+Neeche wale pages screen dikhti hain lekin save load apiService se nahi hota sirf form UI hai
+
+generalSettings/connectedApps.tsx
+generalSettings/security.tsx
+generalSettings/notifications.tsx
+websiteSettings/companySettings.tsx
+websiteSettings/localization.tsx
+websiteSettings/language.tsx
+websiteSettings/preference.tsx
+websiteSettings/prefixes.tsx
+websiteSettings/socialAuthentication.tsx
+systemSettings/emailSettings.tsx
+systemSettings/smsSettings.tsx
+systemSettings/gdprCookies.tsx
+systemSettings/otp-settings.tsx
+systemSettings/email-templates.tsx
+financialSettings/taxRates.tsx
+financialSettings/paymentGateways.tsx
+appSettings/customFields.tsx
+otherSettings/storage.tsx
+otherSettings/banIpaddress.tsx
+
+User in menus par click karega to page khulega lekin data save nahi hoga backend par.
+
+
+================================================================================
+SECURITY AND PLATFORM
+================================================================================
+
+Module Name: SaaS Module Route Enforcement
+Status: Partial
+Priority: High
+
+What works today
+Super admin plan aur school par show_in_menu aur route_accessible set kar sakta hai.
+Login par saas_modules user object me aata hai.
+Sidebar saasSidebarFilter.ts se show_in_menu hide karta hai.
+
+Backend API pending
+Tenant routes par module key check middleware nahi. Disabled module par bhi API chal sakti hai agar URL pata ho.
+
+UI pending
+RoleGuard ya canAccessPath me route_accessible check nahi.
+User sidebar se link hata de par direct URL type karke page khol sakta hai jab tak route registered hai.
+SuperAdminSchoolModules par route_accessible toggle hai par tenant app use nahi karti navigation block ke liye.
+
+
+Module Name: Settings API Authorization
+Status: Partial
+Priority: Medium
+
+What works today
+School profile update headmaster ke liye restricted hai controller me.
+
+Backend API pending
+/api/settings kuch routes par koi requireRole nahi koi bhi logged in user read write try kar sakta hai theoretically.
+
+UI pending
+UI sab roles ko settings menu nahi dikhati par student teacher ko agar URL mile to risk hai. Frontend block incomplete backend par.
+
+
+Module Name: Curriculum API Role Checks
+Status: Partial
+Priority: Medium
+
+What works today
+Curriculum mapping UI API se chalti hai completed doc me.
+
+Backend API pending
+curriculumRoutes par sirf authenticate hai requireRole har endpoint par nahi.
+
+UI pending
+UI theek hai. Issue sirf security backend par hai unauthorized role API hit kar sakti hai direct.
+
+
+Module Name: Self Registration and Password Recovery
+Status: Pending
+Priority: Low
+
+What works today
+Template pages login2 login3 register forgotPassword resetPassword emailVerification exist karte hain routes par.
+
+Backend API pending
+authRoutes me register forgot reset endpoints nahi.
+
+UI pending
+Auth pages dikhengi lekin submit par kaam nahi karega ya error aayega kyunki API nahi.
+Production me sirf /login institute flow use hota hai.
+Template routes router.link.tsx me registered hain cleanup pending doc UI kit me bhi.
+
+
+================================================================================
+TEMPLATE AND NON CORE MODULES
+================================================================================
+
+Module Name: Sports and Players
+Status: Pending
+Priority: Low
+
+What works today
+Menu me sports link ho sakta hai SaaS se.
+
+Backend API pending
+Koi /api/sports nahi.
+
+UI pending
+management/sports/sportsList.tsx aur playersList.tsx JSON sportsList se table bharte hain.
+Add edit player buttons real save nahi karte.
+
+
+Module Name: Content Management
+Status: Pending
+Priority: Low
+
+What works today
+Content submenu pages render hoti hain.
+
+Backend API pending
+Koi content blog FAQ API nahi.
+
+UI pending
+Saari content module files JSON use karti hain
+content/pages.tsx countries states cities testimonials faq blog categories comments tags
+Save publish buttons backend se connect nahi.
+
+
+Module Name: Membership
+Status: Pending
+Priority: Low
+
+What works today
+Membership menu pages template dikhti hain.
+
+Backend API pending
+Tenant membership billing API nahi. SaaS plans super admin par alag completed hai.
+
+UI pending
+membershiptrasaction.tsx JSON membership_transcation use karti hai.
+Plans addons transactions screens mock hain.
+
+
+Module Name: Support Tickets
+Status: Pending
+Priority: Low
+
+What works today
+Support files exist karte hain.
+
+Backend API pending
+Support ticket API nahi.
+
+UI pending
+support/contactMessages.tsx JSON contactMessages.
+Headmaster sidebar me Support section comment out hai menu me dikhta bhi nahi mostly.
+
+
+Module Name: UI Kit and Demo Routes
+Status: Pending
+Priority: Low
+
+What works today
+Bahut saare /ui-* /form-* routes router me registered hain.
+
+Backend API pending
+Zarurat nahi product feature ke liye.
+
+UI pending
+Poora uiInterface folder demo components hai.
+Production app me ye routes hide ya hataane hain taaki user galti se na khole.
+Duplicate login register layouts bhi auth folder me hain.
+
+
+================================================================================
+ADMINISTRATIVE ROLE AS PRODUCT
+================================================================================
+
+Module Name: Administrative Role Expansion
+Status: Partial
+Priority: Medium
+
+What works today
+role_id 6 staff row administrative dashboard leave approval operational modules.
+
+Backend API pending
+Alag administrative-only APIs nahi. Zyada tar headmaster jaisi PEOPLE_MANAGER FEE_MANAGER access.
+
+UI pending
+Administrative ko user-management general-settings website-settings system-settings routes block hain canAccessPath se.
+Lekin dedicated administrative-only screens alag se design nahi kiye gaye sirf dashboard aur filtered sidebar hai.
+Administrative my-details administrative-details se staff profile khulti hai.
+
+
+================================================================================
+DATA AND REPORTS
+================================================================================
+
+Module Name: Unified Reports API
+Status: Partial
+Priority: Low
+
+What works today
+Alag alag report pages API use karti hain completed doc me.
+
+Backend API pending
+Single /api/reports router nahi. reports table chat user reports ke liye hai.
+
+UI pending
+Koi ek Reports admin job queue screen nahi. Har report alag menu item hai jo theek hai agar product ko unified API nahi chahiye.
+
+
+Module Name: Database Schema Consistency
+Status: Partial
+Priority: Medium
+
+What works today
+App chal raha hai fallback queries se.
+
+Backend API pending
+studentController me religion_id typo reigion_id fallback aur multiple hostel table names try hote hain.
+
+UI pending
+UI par direct error nahi dikhta lekin kuch students par slow wrong join ho sakta hai purane DB par.
+Fix migration ke baad UI change kam backend cleanup zyada.
+
+
+================================================================================
+ROLE BASED WHAT IS MISSING
+================================================================================
+
+SUPER ADMIN
+Partial: route_accessible tenant app me enforce nahi. School banane ke baad auto test script doc me nahi.
+
+HEADMASTER
+Pending UI: Homework academic reason sports content membership screens mock.
+Partial UI: Teacher delete export disabled. Permissions page fake. Extended settings save nahi. SaaS direct URL bypass.
+Partial API: User create update. Teacher parent guardian delete.
+
+ADMINISTRATIVE
+Partial UI: User management aur system settings menus blocked by design.
+Pending: Alag administrative product screens agar roadmap me hain.
+
+TEACHER
+Pending UI: Homework assign and grade screens nahi.
+Partial UI: Dashboard syllabus box empty. Teacher list export delete Coming soon. Staff attendance routes blocked intentionally.
+
+STUDENT
+Pending UI: Homework view submit nahi.
+Pending API: Homework backend nahi.
+
+PARENT
+Pending UI: Homework child ke liye nahi.
+Partial: Baaki portal completed doc me.
+
+GUARDIAN
+Partial UI: Sidebar almost empty sirf dashboard aur application.
+Pending UI: Parent jaisa child menu nahi.
+Pending API: Homework jab banega tab guardian view bhi chahiye.
+
+DRIVER
+Partial by design: Sirf dashboard aur profile. Agar trip detail chahiye to pending product decision.
+
+
+================================================================================
+SUMMARY
+================================================================================
+
+Total items in this document: 28
+
+Partial count: 20
+
+Pending count: 8
+
+Items marked Partial
+Teacher Management
+Parent Management
+Guardian Management
+Designations
+Staff Profile Payroll Tab
+Accounts Transactions
+Manage Users
+Calendar Page
+Chat Extra Features
+Teacher Dashboard Syllabus Widget
+Extended Settings Pages
+SaaS Module Route Enforcement
+Settings API Authorization
+Curriculum API Role Checks
+Administrative Role Expansion
+Unified Reports API
+Database Schema Consistency
+
+Items marked Pending
+Permissions Screen
+Class Homework
+Academic Reason Master
+Self Registration and Password Recovery
+Sports and Players
+Content Management
+Membership
+Support Tickets
+UI Kit and Demo Routes
+
+Combined with completed_task document
+
+Total tracked module areas: 58 completed plus 28 pending partial equals 86 line items with some overlap in naming
+
+Completed modules: 58 see completed_task
+
+Open work: 28 entries in this file
+
+High priority for next sprint
+1 Class Homework full stack UI and API
+2 Guardian sidebar navigation UI
+3 SaaS route_accessible block on UI routes and API middleware
+
+Medium priority
+Teacher parent guardian delete API and UI buttons
+Manage users create edit UI and API
+Staff profile payroll tab wire to API
+Calendar page wire useCalendarEvents
+Extended settings wire or remove from menu
+Teacher salary page wire to payroll API
+
+Low priority
+Academic reason sports content membership support template cleanup
+Designation delete
+Chat extra buttons
+Teacher dashboard syllabus widget
+Transactions write API if needed

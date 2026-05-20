@@ -31,8 +31,19 @@ function defaultAllModulesTrue() {
   return o;
 }
 
+const SAAS_CORE_MODULE_KEYS = ['peoples', 'academic'];
+
+function enforceCoreModules(modulesMap) {
+  for (const k of SAAS_CORE_MODULE_KEYS) {
+    modulesMap[k] = { show_in_menu: true, route_accessible: true };
+  }
+  return modulesMap;
+}
+
 module.exports = {
   SAAS_MODULE_CATALOG,
   SAAS_MODULE_KEYS,
+  SAAS_CORE_MODULE_KEYS,
   defaultAllModulesTrue,
+  enforceCoreModules,
 };

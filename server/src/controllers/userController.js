@@ -1,7 +1,9 @@
 const { query } = require('../config/database');
 const { ROLES } = require('../config/roles');
+const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
 
 let parentSplitColumnsSupportPromise = null;
+let parentsTableSupportPromise = null;
 let deleteAccountRequestsTableSupportPromise = null;
 
 function stripSensitiveUserFields(row) {
@@ -24,6 +26,21 @@ async function hasParentSplitUserColumns() {
       .catch(() => false);
   }
   return parentSplitColumnsSupportPromise;
+}
+
+async function hasParentsTable() {
+  if (!parentsTableSupportPromise) {
+    parentsTableSupportPromise = query(
+      `SELECT 1 AS ok
+       FROM information_schema.tables
+       WHERE table_schema = 'public'
+         AND table_name = 'parents'
+       LIMIT 1`
+    )
+      .then((r) => r.rows.length > 0)
+      .catch(() => false);
+  }
+  return parentsTableSupportPromise;
 }
 
 async function ensureDeleteAccountRequestsTable() {
@@ -68,9 +85,20 @@ const getAllUsers = async (req, res) => {
   try {
     const { role_id } = req.query;
     const hasSplitParentColumns = await hasParentSplitUserColumns();
+    const parentsTableExists = await hasParentsTable();
     const parentUserPredicate = hasSplitParentColumns
       ? `(p.user_id = u.id OR p.father_user_id = u.id OR p.mother_user_id = u.id)`
       : `p.user_id = u.id`;
+
+    const parentsRelBranch = parentsTableExists
+      ? `
+          SELECT enr.class_id, enr.section_id
+          FROM parents p
+          INNER JOIN students s ON s.id = p.student_id AND s.status = \'Active\'
+          ${lateralCurrentEnrollment('s.id')}
+          WHERE ${parentUserPredicate}
+          UNION`
+      : '';
 
     const classSectionProjection = `
       COALESCE(stu_ctx.class_name, teacher_ctx.class_name, parent_ctx.class_name, guardian_ctx.class_name) AS class_name,
@@ -81,8 +109,9 @@ const getAllUsers = async (req, res) => {
       LEFT JOIN LATERAL (
         SELECT c.class_name, sec.section_name
         FROM students s
-        LEFT JOIN classes c ON c.id = s.class_id
-        LEFT JOIN sections sec ON sec.id = s.section_id
+        ${lateralCurrentEnrollment('s.id')}
+        LEFT JOIN classes c ON c.id = enr.class_id
+        LEFT JOIN sections sec ON sec.id = enr.section_id
         WHERE s.user_id = u.id
           AND s.status = \'Active\'
         ORDER BY s.id DESC
@@ -90,9 +119,9 @@ const getAllUsers = async (req, res) => {
       ) AS stu_ctx ON TRUE
       LEFT JOIN LATERAL (
         SELECT
-          c.class_name,
+          teacher_ctx_base.class_name,
           COALESCE(
-            sec.section_name,
+            teacher_ctx_base.section_name,
             sched_sec.section_name
           ) AS section_name
         FROM staff st
@@ -125,16 +154,14 @@ const getAllUsers = async (req, res) => {
           NULLIF(string_agg(DISTINCT c.class_name, ', ' ORDER BY c.class_name), '') AS class_name,
           NULLIF(string_agg(DISTINCT sec.section_name, ', ' ORDER BY sec.section_name), '') AS section_name
         FROM (
-          SELECT s.class_id, s.section_id
-          FROM parents p
-          INNER JOIN students s ON s.id = p.student_id AND s.status = \'Active\'
-          WHERE ${parentUserPredicate}
-          UNION
-          SELECT s2.class_id, s2.section_id
+          ${parentsRelBranch}
+          SELECT enr.class_id, enr.section_id
           FROM guardians g
-          INNER JOIN students s2 ON s2.id = g.student_id AND s2.status = \'Active\'
+          INNER JOIN student_guardian_links sgl ON sgl.guardian_id = g.id
+          INNER JOIN students s2 ON s2.id = sgl.student_id AND s2.status = \'Active\'
+          ${lateralCurrentEnrollment('s2.id')}
           WHERE g.user_id = u.id
-            AND g.status = \'Active\'
+            AND COALESCE(g.is_active, true) = true
         ) AS rel
         LEFT JOIN classes c ON c.id = rel.class_id
         LEFT JOIN sections sec ON sec.id = rel.section_id
@@ -142,11 +169,13 @@ const getAllUsers = async (req, res) => {
       LEFT JOIN LATERAL (
         SELECT c.class_name, sec.section_name
         FROM guardians g
-        INNER JOIN students s ON s.id = g.student_id AND s.status = \'Active\'
-        LEFT JOIN classes c ON c.id = s.class_id
-        LEFT JOIN sections sec ON sec.id = s.section_id
+        INNER JOIN student_guardian_links sgl ON sgl.guardian_id = g.id
+        INNER JOIN students s ON s.id = sgl.student_id AND s.status = \'Active\'
+        ${lateralCurrentEnrollment('s.id')}
+        LEFT JOIN classes c ON c.id = enr.class_id
+        LEFT JOIN sections sec ON sec.id = enr.section_id
         WHERE g.user_id = u.id
-          AND g.status = \'Active\'
+          AND COALESCE(g.is_active, true) = true
         ORDER BY s.id DESC
         LIMIT 1
       ) AS guardian_ctx ON TRUE
@@ -169,8 +198,9 @@ const getAllUsers = async (req, res) => {
           FROM users u
           LEFT JOIN user_roles ur ON u.role_id = ur.id
           LEFT JOIN students s ON u.id = s.user_id AND s.status = \'Active\'
-          LEFT JOIN classes c ON s.class_id = c.id
-          LEFT JOIN sections sec ON s.section_id = sec.id
+          ${lateralCurrentEnrollment('s.id')}
+          LEFT JOIN classes c ON enr.class_id = c.id
+          LEFT JOIN sections sec ON enr.section_id = sec.id
           WHERE u.is_active = true AND u.role_id = $1
           ORDER BY u.id, s.id ASC NULLS LAST, u.first_name ASC, u.last_name ASC
         `, [roleNum]);
@@ -330,9 +360,10 @@ const getUserById = async (req, res) => {
         -- User role
         ur.role_name
       FROM users u
-      LEFT JOIN students s ON u.id = s.user_id
-      LEFT JOIN classes c ON s.class_id = c.id
-      LEFT JOIN sections sec ON s.section_id = sec.id
+      LEFT JOIN students s ON u.id = s.user_id AND s.status = \'Active\'
+      ${lateralCurrentEnrollment('s.id')}
+      LEFT JOIN classes c ON enr.class_id = c.id
+      LEFT JOIN sections sec ON enr.section_id = sec.id
       LEFT JOIN staff st ON u.id = st.user_id
       LEFT JOIN designations d ON st.designation_id = d.id
       LEFT JOIN user_roles ur ON u.role_id = ur.id

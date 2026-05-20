@@ -1,4 +1,5 @@
-import { useRef, useState, useEffect, useMemo } from "react";
+import { useRef, useState, useEffect, useMemo, useCallback } from "react";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import { useTeachers } from "../../../core/hooks/useTeachers";
 import { useSections } from "../../../core/hooks/useSections";
 import { apiService } from "../../../core/services/apiService";
@@ -328,6 +329,44 @@ const ClassSection = () => {
     };
   }).filter((row: any) => (filterSection === "Select" || row.sectionName === filterSection) && (filterStatus === "Select" || row.status === filterStatus));
 
+  const exportColumns = useMemo(
+    () => [
+      { title: "ID", dataKey: "id" },
+      { title: "Section Name", dataKey: "sectionName" },
+      { title: "Status", dataKey: "status" },
+    ],
+    []
+  );
+
+  const exportRows = useMemo(
+    () =>
+      transformedData.map((row: any) => ({
+        id: String(row.id ?? ""),
+        sectionName: String(row.sectionName ?? ""),
+        status: String(row.status ?? ""),
+      })),
+    [transformedData]
+  );
+
+  const handleToolbarRefresh = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+
+  const handleExportExcel = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToExcel(exportRows, "sections-list", "Sections");
+  }, [exportRows]);
+
+  const handleExportPdf = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToPDF(exportRows, "Sections", "sections-list", exportColumns);
+  }, [exportRows, exportColumns]);
+
+  const handlePrint = useCallback(() => {
+    if (!exportRows.length) return;
+    printData("Sections", exportColumns, exportRows);
+  }, [exportRows, exportColumns]);
+
   const columns = [
     {
       title: "ID",
@@ -427,7 +466,12 @@ const ClassSection = () => {
                 </nav>
               </div>
               <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption
+                onRefresh={handleToolbarRefresh}
+                onPrint={handlePrint}
+                onExportPdf={handleExportPdf}
+                onExportExcel={handleExportExcel}
+              />
                 <div className="mb-2">
                   <Link
                     to="#"

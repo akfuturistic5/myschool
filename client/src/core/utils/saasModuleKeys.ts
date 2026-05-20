@@ -1,4 +1,11 @@
 /** Keep keys aligned with server/src/config/saasModuleCatalog.js */
+export const SAAS_CORE_MODULE_KEYS = ['peoples', 'academic'] as const;
+
+export function isSaasCoreModule(key: string): boolean {
+  return (SAAS_CORE_MODULE_KEYS as readonly string[]).includes(key);
+}
+
+/** Keep keys aligned with server/src/config/saasModuleCatalog.js */
 export const SAAS_MODULE_CATALOG: { key: string; label: string }[] = [
   { key: 'peoples', label: 'People' },
   { key: 'academic', label: 'Academic' },
