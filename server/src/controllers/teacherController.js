@@ -7,6 +7,7 @@ const { createTeacherUser } = require('../utils/createPersonUser');
 const { resolveTeacherDocumentPath, sanitizeTenant } = require('../utils/teacherDocumentStorage');
 const { resolveAcademicYearId } = require('../utils/academicYear');
 const { enrichStaffProfileAllocations } = require('../services/profileAllocationDetailsService');
+const { resolveVehicleRouteAssignmentForAllocation } = require('../utils/transportAllocationVra');
 
 async function upsertStaffTransportAllocation(client, staffId, staffAcademicYearId, transportPayload) {
   const routeId = Number(transportPayload?.route_id);
@@ -35,10 +36,23 @@ async function upsertStaffTransportAllocation(client, staffId, staffAcademicYear
     return;
   }
 
-  if (
-    !Number.isFinite(routeId) || routeId <= 0 ||
-    !Number.isFinite(pickupPointId) || pickupPointId <= 0
-  ) {
+  if (!Number.isFinite(routeId) || routeId <= 0 || !Number.isFinite(pickupPointId) || pickupPointId <= 0) {
+    return;
+  }
+
+  let vraId;
+  try {
+    const resolved = await resolveVehicleRouteAssignmentForAllocation(
+      client,
+      {
+        vehicle_route_assignment_id: transportPayload?.vehicle_route_assignment_id,
+        route_id: routeId,
+        vehicle_id: vehicleId,
+      },
+      { academicYearId: staffAcademicYearId, hasAcademicYearId: true }
+    );
+    vraId = resolved.assignmentId;
+  } catch {
     return;
   }
 
@@ -78,19 +92,17 @@ async function upsertStaffTransportAllocation(client, staffId, staffAcademicYear
   if (active.rows.length > 0) {
     await client.query(
       `UPDATE transport_allocations
-       SET route_id = $1,
+       SET vehicle_route_assignment_id = $1,
            pickup_point_id = $2,
-           vehicle_id = $3,
-           fee_master_id = $4,
-           assigned_amount = $5,
-           is_free = $6,
-           academic_year_id = COALESCE($7, academic_year_id),
+           fee_master_id = $3,
+           assigned_amount = $4,
+           is_free = $5,
+           academic_year_id = COALESCE($6, academic_year_id),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $8`,
+       WHERE id = $7`,
       [
-        routeId,
+        vraId,
         pickupPointId,
-        vehicleId && Number.isFinite(vehicleId) ? vehicleId : null,
         isFree ? null : feeMasterId,
         assignedAmount,
         isFree,
@@ -103,14 +115,13 @@ async function upsertStaffTransportAllocation(client, staffId, staffAcademicYear
 
   await client.query(
     `INSERT INTO transport_allocations
-      (staff_id, route_id, pickup_point_id, vehicle_id, fee_master_id, assigned_amount, is_free, start_date, status, academic_year_id, created_at, updated_at)
+      (staff_id, vehicle_route_assignment_id, pickup_point_id, fee_master_id, assigned_amount, is_free, start_date, status, academic_year_id, created_at, updated_at)
      VALUES
-      ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, 'Active', $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      ($1, $2, $3, $4, $5, $6, CURRENT_DATE, 'Active', $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
     [
       staffId,
-      routeId,
+      vraId,
       pickupPointId,
-      vehicleId && Number.isFinite(vehicleId) ? vehicleId : null,
       isFree ? null : feeMasterId,
       assignedAmount,
       isFree,
@@ -491,9 +502,9 @@ const getTeacherById = async (req, res) => {
       LEFT JOIN subjects sub ON sta.class_subject_id = sub.id
       LEFT JOIN LATERAL (
         SELECT
-          ta.route_id,
+          vra.route_id,
           ta.pickup_point_id,
-          ta.vehicle_id,
+          vra.vehicle_id,
           ta.fee_master_id AS transport_assigned_fee_id,
           ta.assigned_amount AS transport_assigned_fee_amount,
           ta.is_free AS transport_is_free,
@@ -502,9 +513,10 @@ const getTeacherById = async (req, res) => {
           v.vehicle_number AS vehicle_alloc_no,
           tfm.plan_name
         FROM transport_allocations ta
-        LEFT JOIN routes rt ON rt.id = ta.route_id
+        INNER JOIN vehicle_route_assignments vra ON vra.id = ta.vehicle_route_assignment_id AND vra.deleted_at IS NULL
+        LEFT JOIN routes rt ON rt.id = vra.route_id
         LEFT JOIN pickup_points pp ON pp.id = ta.pickup_point_id
-        LEFT JOIN transport_vehicles v ON v.id = ta.vehicle_id
+        LEFT JOIN transport_vehicles v ON v.id = vra.vehicle_id
         LEFT JOIN transport_fee_master tfm ON tfm.id = ta.fee_master_id
         WHERE ta.staff_id = s.id
           AND LOWER(COALESCE(ta.status, '')) = 'active'

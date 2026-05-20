@@ -24,6 +24,7 @@ const getAllAssignments = async (req, res) => {
   try {
     const hasDeletedAt = await hasColumn('vehicle_route_assignments', 'deleted_at');
     const hasRouteStops = await hasTable('route_stops');
+    const hasPickupRouteId = await hasColumn('pickup_points', 'route_id');
     
     const {
       page = 1,
@@ -31,6 +32,7 @@ const getAllAssignments = async (req, res) => {
       search = '',
       status = 'all',
       route_id,
+      pickup_point_id,
       academic_year_id,
       sortField = 'id',
       sortOrder = 'ASC',
@@ -63,6 +65,25 @@ const getAllAssignments = async (req, res) => {
     if (academic_year_id) {
       params.push(Number(academic_year_id));
       whereClause += ` AND vra.academic_year_id = $${params.length}`;
+    }
+
+    if (pickup_point_id && pickup_point_id !== 'all' && String(pickup_point_id).trim() !== '') {
+      const ppId = Number(pickup_point_id);
+      if (Number.isFinite(ppId)) {
+        params.push(ppId);
+        const pIdx = params.length;
+        if (hasRouteStops) {
+          whereClause += ` AND EXISTS (
+            SELECT 1 FROM route_stops rs
+            WHERE rs.route_id = vra.route_id AND rs.pickup_point_id = $${pIdx}
+          )`;
+        } else if (hasPickupRouteId) {
+          whereClause += ` AND EXISTS (
+            SELECT 1 FROM pickup_points pp
+            WHERE pp.id = $${pIdx} AND pp.route_id = vra.route_id
+          )`;
+        }
+      }
     }
 
     const allowedSortFields = ['id', 'vehicle_number', 'route_name', 'created_at'];

@@ -86,7 +86,7 @@ const getMyDriverPortal = async (req, res) => {
     if (routeIds.length > 0) {
       const st = await query(
         `SELECT s.id, s.first_name, s.last_name, s.admission_number, s.roll_number,
-                s.phone, ta.route_id, ta.pickup_point_id,
+                s.phone, vra.route_id, ta.pickup_point_id,
                 c.class_name, sec.section_name,
                 r.route_name,
                 pp.point_name AS pickup_point_name, pp.address AS pickup_address
@@ -96,13 +96,14 @@ const getMyDriverPortal = async (req, res) => {
           AND LOWER(COALESCE(ta.user_type, '')) = 'student'
           AND LOWER(COALESCE(ta.status, '')) = 'active'
           AND (ta.end_date IS NULL OR ta.end_date >= CURRENT_DATE)
+         INNER JOIN vehicle_route_assignments vra ON vra.id = ta.vehicle_route_assignment_id
          LEFT JOIN classes c ON c.id = s.class_id
          LEFT JOIN sections sec ON sec.id = s.section_id
-         LEFT JOIN routes r ON r.id = ta.route_id
+         LEFT JOIN routes r ON r.id = vra.route_id
          LEFT JOIN pickup_points pp ON pp.id = ta.pickup_point_id
          WHERE s.is_active = true
            AND s.is_transport_required = true
-           AND ta.route_id = ANY($1::int[])
+           AND vra.route_id = ANY($1::int[])
          ORDER BY c.class_name NULLS LAST, sec.section_name NULLS LAST, s.first_name, s.last_name`,
         [routeIds]
       );

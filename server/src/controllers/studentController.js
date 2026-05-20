@@ -27,6 +27,7 @@ const {
   enrichStudentHostel,
   enrichStudentTransport,
 } = require('../services/profileAllocationDetailsService');
+const { resolveVehicleRouteAssignmentForAllocation } = require('../utils/transportAllocationVra');
 
 const formatGrNumber = (n) => `GR${String(n).padStart(6, '0')}`;
 
@@ -169,11 +170,22 @@ async function upsertStudentTransportAllocation(client, studentId, studentAcadem
     );
     return;
   }
-  if (
-    !Number.isFinite(routeId) || routeId <= 0 ||
-    !Number.isFinite(pickupPointId) || pickupPointId <= 0 ||
-    !Number.isFinite(vehicleId) || vehicleId <= 0
-  ) {
+  if (!Number.isFinite(routeId) || routeId <= 0 || !Number.isFinite(pickupPointId) || pickupPointId <= 0) {
+    return;
+  }
+  let vraId;
+  try {
+    const resolved = await resolveVehicleRouteAssignmentForAllocation(
+      client,
+      {
+        vehicle_route_assignment_id: transportPayload?.vehicle_route_assignment_id,
+        route_id: routeId,
+        vehicle_id: vehicleId,
+      },
+      { academicYearId: studentAcademicYearId, hasAcademicYearId: true }
+    );
+    vraId = resolved.assignmentId;
+  } catch {
     return;
   }
   let assignedFeeAmount = null;
@@ -208,19 +220,17 @@ async function upsertStudentTransportAllocation(client, studentId, studentAcadem
   if (active.rows.length > 0) {
     await client.query(
       `UPDATE transport_allocations
-       SET route_id = $1,
+       SET vehicle_route_assignment_id = $1,
            pickup_point_id = $2,
-           vehicle_id = $3,
-           fee_master_id = $4,
-           assigned_amount = $5,
-           is_free = $6,
-           academic_year_id = COALESCE($7, academic_year_id),
+           fee_master_id = $3,
+           assigned_amount = $4,
+           is_free = $5,
+           academic_year_id = COALESCE($6, academic_year_id),
            updated_at = NOW()
-       WHERE id = $8`,
+       WHERE id = $7`,
       [
-        routeId,
+        vraId,
         pickupPointId,
-        vehicleId,
         isFree ? null : assignedFeeId,
         assignedFeeAmount,
         isFree,
@@ -232,14 +242,13 @@ async function upsertStudentTransportAllocation(client, studentId, studentAcadem
   }
   await client.query(
     `INSERT INTO transport_allocations
-      (student_id, route_id, pickup_point_id, vehicle_id, fee_master_id, assigned_amount, is_free, academic_year_id, status, start_date, created_at, updated_at)
+      (student_id, vehicle_route_assignment_id, pickup_point_id, fee_master_id, assigned_amount, is_free, academic_year_id, status, start_date, created_at, updated_at)
      VALUES
-      ($1, $2, $3, $4, $5, $6, $7, $8, 'Active', CURRENT_DATE, NOW(), NOW())`,
+      ($1, $2, $3, $4, $5, $6, $7, 'Active', CURRENT_DATE, NOW(), NOW())`,
     [
       studentId,
-      routeId,
+      vraId,
       pickupPointId,
-      vehicleId,
       isFree ? null : assignedFeeId,
       assignedFeeAmount,
       isFree,

@@ -233,9 +233,9 @@ async function enrichStudentTransport(profile, studentId, academicYearId = null,
 
     const result = await query(
       `SELECT
-         ta.route_id,
+         vra.route_id,
          ta.pickup_point_id,
-         ta.vehicle_id,
+         vra.vehicle_id,
          ta.${feeCol} AS transport_assigned_fee_id,
          ta.${amountCol} AS transport_assigned_fee_amount,
          ta.is_free AS transport_is_free,
@@ -244,9 +244,10 @@ async function enrichStudentTransport(profile, studentId, academicYearId = null,
          v.vehicle_number,
          tfm.plan_name AS transport_fee_plan_name
        FROM transport_allocations ta
-       LEFT JOIN routes r ON r.id = ta.route_id
+       INNER JOIN vehicle_route_assignments vra ON vra.id = ta.vehicle_route_assignment_id
+       LEFT JOIN routes r ON r.id = vra.route_id
        LEFT JOIN pickup_points pp ON pp.id = ta.pickup_point_id
-       LEFT JOIN ${vehicleTable} v ON v.id = ta.vehicle_id
+       LEFT JOIN ${vehicleTable} v ON v.id = vra.vehicle_id
        LEFT JOIN transport_fee_master tfm ON tfm.id = ta.${feeCol}
        WHERE (${borrowerParts.join(' OR ')})
          AND ${statusCond}
@@ -315,9 +316,9 @@ async function enrichStaffTransport(profile, staffId) {
 
     const result = await query(
       `SELECT
-         ta.route_id,
+         vra.route_id,
          ta.pickup_point_id,
-         ta.vehicle_id,
+         vra.vehicle_id,
          ta.${feeCol} AS transport_assigned_fee_id,
          ta.${amountCol} AS transport_assigned_fee_amount,
          ta.is_free AS transport_is_free,
@@ -326,9 +327,10 @@ async function enrichStaffTransport(profile, staffId) {
          v.vehicle_number,
          tfm.plan_name AS transport_fee_plan_name
        FROM transport_allocations ta
-       LEFT JOIN routes r ON r.id = ta.route_id
+       INNER JOIN vehicle_route_assignments vra ON vra.id = ta.vehicle_route_assignment_id
+       LEFT JOIN routes r ON r.id = vra.route_id
        LEFT JOIN pickup_points pp ON pp.id = ta.pickup_point_id
-       LEFT JOIN ${vehicleTable} v ON v.id = ta.vehicle_id
+       LEFT JOIN ${vehicleTable} v ON v.id = vra.vehicle_id
        LEFT JOIN transport_fee_master tfm ON tfm.id = ta.${feeCol}
        WHERE (${borrowerParts.join(' OR ')})
          AND ${statusCond}

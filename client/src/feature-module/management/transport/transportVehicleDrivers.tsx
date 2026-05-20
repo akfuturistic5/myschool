@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
-import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
 import { status } from "../../../core/common/selectoption/selectoption";
 import Table from "../../../core/common/dataTable/index";
@@ -11,6 +10,8 @@ import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { useTransportDrivers } from "../../../core/hooks/useTransportDrivers";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Swal from "sweetalert2";
+import { Modal } from "antd";
+import { apiService } from "../../../core/services/apiService";
 
 const TransportVehicleDrivers = () => {
   const routes = all_routes;
@@ -22,7 +23,7 @@ const TransportVehicleDrivers = () => {
     limit: 10,
     search: "",
     role: "all",
-    status: "",
+    status: "all",
     sortField: "id",
     sortOrder: "ASC"
   });
@@ -33,6 +34,60 @@ const TransportVehicleDrivers = () => {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [draftRole, setDraftRole] = useState("all");
   const [draftStatus, setDraftStatus] = useState("all");
+
+  const [licensePreview, setLicensePreview] = useState<{
+    url: string;
+    name: string;
+    isPdf: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    setDraftRole(
+      params.role === "" || params.role == null ? "all" : params.role
+    );
+    setDraftStatus(
+      params.status === "" ||
+        params.status == null ||
+        params.status === "all"
+        ? "all"
+        : params.status
+    );
+  }, [params.role, params.status]);
+
+  const openLicensePreview = async (record: any) => {
+    const raw = record.originalData?.license_photo_url ?? record.licensePhotoUrl;
+    if (!raw || String(raw).trim() === "") {
+      await Swal.fire({
+        icon: "info",
+        title: "No file",
+        text: "There is no license file for this staff member.",
+      });
+      return;
+    }
+    try {
+      const url = await apiService.resolveAvatarUrl(String(raw).trim());
+      if (!url) {
+        await Swal.fire({
+          icon: "error",
+          title: "Cannot open file",
+          text: "Could not resolve file URL.",
+        });
+        return;
+      }
+      const isPdf = /\.pdf(\?|$)/i.test(String(raw));
+      setLicensePreview({
+        url,
+        name: record.name || "Staff",
+        isPdf,
+      });
+    } catch {
+      await Swal.fire({
+        icon: "error",
+        title: "Cannot open file",
+        text: "Something went wrong loading the license file.",
+      });
+    }
+  };
 
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
@@ -51,6 +106,7 @@ const TransportVehicleDrivers = () => {
       phone: "phone",
       role: "role",
       driverLicenseNo: "license_number",
+      licenseExpiry: "license_expiry",
       status: "is_active",
       createdAt: "created_at",
     };
@@ -82,8 +138,8 @@ const TransportVehicleDrivers = () => {
       Name: item.name,
       Role: item.role,
       Phone: item.phone,
-      "License No": item.driverLicenseNo,
-      Address: item.address,
+      "License No": item.role === "Conductor" ? "N/A" : item.driverLicenseNo,
+      "License expiry date": item.licenseExpiry || "—",
       Status: item.status
     }));
     exportToExcel(exportData, `Transport_Drivers_${new Date().toISOString().split('T')[0]}`);
@@ -96,7 +152,7 @@ const TransportVehicleDrivers = () => {
       { title: "Role", dataKey: "role" },
       { title: "Phone", dataKey: "phone" },
       { title: "License No", dataKey: "driverLicenseNo" },
-      { title: "Address", dataKey: "address" },
+      { title: "License expiry date", dataKey: "licenseExpiry" },
       { title: "Status", dataKey: "status" },
     ];
     exportToPDF(data, "Transport Staff List", `Transport_Staff_${new Date().toISOString().split('T')[0]}`, cols);
@@ -109,7 +165,7 @@ const TransportVehicleDrivers = () => {
       { title: "Role", dataKey: "role" },
       { title: "Phone", dataKey: "phone" },
       { title: "License No", dataKey: "driverLicenseNo" },
-      { title: "Address", dataKey: "address" },
+      { title: "License expiry date", dataKey: "licenseExpiry" },
       { title: "Status", dataKey: "status" },
     ];
     printData("Transport Staff List", cols, data);
@@ -160,13 +216,44 @@ const TransportVehicleDrivers = () => {
     {
       title: "Driver License No",
       dataIndex: "driverLicenseNo",
-      render: (text: string, record: any) => (record.role === "Conductor" ? "N/A" : text),
+      render: (text: string, record: any) =>
+        record.role === "Conductor" || record.role === "conductor" ? "N/A" : text || "—",
       sorter: true,
     },
     {
-      title: "Address",
-      dataIndex: "address",
+      title: "License expiry date",
+      dataIndex: "licenseExpiry",
       sorter: true,
+      render: (text: string, record: any) =>
+        record.role === "Conductor" || record.role === "conductor"
+          ? "—"
+          : text && text !== "—"
+            ? text
+            : "—",
+    },
+    {
+      title: "License file",
+      dataIndex: "licensePhotoUrl",
+      align: "center" as const,
+      render: (_: unknown, record: any) => {
+        const isConductor =
+          record.role === "Conductor" || record.role === "conductor";
+        const raw =
+          record.originalData?.license_photo_url ?? record.licensePhotoUrl;
+        if (isConductor || !raw || String(raw).trim() === "") {
+          return <span className="text-muted">—</span>;
+        }
+        return (
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-primary"
+            onClick={() => openLicensePreview(record)}
+          >
+            <i className="ti ti-eye me-1" />
+            View
+          </button>
+        );
+      },
     },
     {
       title: "Status",
@@ -328,19 +415,32 @@ const TransportVehicleDrivers = () => {
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3" onClick={() => {
+                        <button
+                          type="button"
+                          className="btn btn-light me-3"
+                          onClick={() => {
                           setDraftRole("all");
                           setDraftStatus("all");
-                          setParams({ ...params, role: "all", status: "all", page: 1 });
-                        }}>
+                          setParams((prev) => ({ ...prev, role: "all", status: "all", page: 1 }));
+                        }}
+                        >
                           Reset
-                        </Link>
-                        <Link to="#" className="btn btn-primary" onClick={() => {
-                          setParams(prev => ({ ...prev, role: draftRole, status: draftStatus, page: 1 }));
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={() => {
+                          setParams((prev) => ({
+                            ...prev,
+                            role: draftRole,
+                            status: draftStatus,
+                            page: 1,
+                          }));
                           handleApplyClick();
-                        }}>
+                        }}
+                        >
                           Apply
-                        </Link>
+                        </button>
                       </div>
                     </form>
                   </div>
@@ -371,6 +471,46 @@ const TransportVehicleDrivers = () => {
           </div>
         </div>
       </div>
+
+      <Modal
+        title={licensePreview ? `License — ${licensePreview.name}` : "License"}
+        open={!!licensePreview}
+        onCancel={() => setLicensePreview(null)}
+        footer={
+          licensePreview ? (
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm"
+              onClick={() => window.open(licensePreview.url, "_blank", "noopener,noreferrer")}
+            >
+              Open in new tab
+            </button>
+          ) : null
+        }
+        width={800}
+        destroyOnClose
+      >
+        {licensePreview &&
+          (licensePreview.isPdf ? (
+          <iframe
+            title="License document"
+            src={licensePreview.url}
+            className="w-100 rounded border-0 bg-light"
+            style={{ minHeight: 480 }}
+          />
+        ) : (
+          <div className="card border-0 shadow-sm">
+            <div className="card-body text-center p-2">
+              <img
+                src={licensePreview.url}
+                alt="Driving license"
+                className="img-fluid rounded"
+                style={{ maxHeight: "70vh" }}
+              />
+            </div>
+          </div>
+        ))}
+      </Modal>
 
       <TransportModal
         selectedDriver={selectedDriver}

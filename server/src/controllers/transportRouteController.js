@@ -1,15 +1,34 @@
 const { query, executeTransaction } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getScopedDriverId, getScopedRouteIdsForDriver } = require('../utils/driverTransportAccess');
-const { hasColumn, hasTable } = require('../utils/schemaInspector');
+const { hasColumn, hasTable, clearSchemaInspectorCache } = require('../utils/schemaInspector');
+
+function formatRouteTime(value) {
+  if (value == null || value === '') return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  return s.length >= 5 ? s.slice(0, 5) : s;
+}
 
 function mapRouteRow(row, stops = []) {
   return {
     id: row.id,
     route_name: row.route_name || '',
     route_code: row.route_code || null,
-    start_time: row.start_time || row.start_point || null,
-    end_time: row.end_time || row.end_point || null,
+    pickup_start_time: formatRouteTime(
+      row.pickup_start_time ?? row.start_time ?? row.start_point
+    ),
+    pickup_end_time: formatRouteTime(
+      row.pickup_end_time ?? row.end_time ?? row.end_point
+    ),
+    drop_start_time: formatRouteTime(row.drop_start_time),
+    drop_end_time: formatRouteTime(row.drop_end_time),
+    start_time: formatRouteTime(
+      row.pickup_start_time ?? row.start_time ?? row.start_point
+    ),
+    end_time: formatRouteTime(
+      row.pickup_end_time ?? row.end_time ?? row.end_point
+    ),
     distance_km: row.distance_km ?? row.total_distance ?? 0,
     total_distance: row.total_distance ?? row.distance_km ?? 0,
     estimated_time: row.estimated_time ?? null,
@@ -27,11 +46,179 @@ function mapRouteRow(row, stops = []) {
   };
 }
 
+function normalizeRouteTimeInput(value) {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  return trimmed.length >= 5 ? trimmed.slice(0, 5) : trimmed;
+}
+
+function normalizeStopTimeInput(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  return trimmed.length >= 5 ? trimmed.slice(0, 5) : trimmed;
+}
+
+function timeToMinutes(value) {
+  if (!value) return null;
+  const parts = String(value).slice(0, 5).split(':').map(Number);
+  if (parts.length < 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) return null;
+  return parts[0] * 60 + parts[1];
+}
+
+function validateRouteTimeRanges(body) {
+  const pickupStart = normalizeRouteTimeInput(resolvePickupStart(body));
+  const pickupEnd = normalizeRouteTimeInput(resolvePickupEnd(body));
+  const dropStart = normalizeRouteTimeInput(body.drop_start_time);
+  const dropEnd = normalizeRouteTimeInput(body.drop_end_time);
+
+  const pairs = [
+    { start: pickupStart, end: pickupEnd, label: 'Pickup' },
+    { start: dropStart, end: dropEnd, label: 'Drop' },
+  ];
+
+  for (const { start, end, label } of pairs) {
+    if ((start && !end) || (!start && end)) {
+      return `${label} start and end time must both be set or both left empty`;
+    }
+    if (start && end) {
+      const startMins = timeToMinutes(start);
+      const endMins = timeToMinutes(end);
+      if (startMins != null && endMins != null && endMins <= startMins) {
+        return `${label} end time must be after ${label.toLowerCase()} start time`;
+      }
+    }
+  }
+
+  return null;
+}
+
+function resolvePickupStart(body) {
+  return body.pickup_start_time !== undefined ? body.pickup_start_time : body.start_time;
+}
+
+function resolvePickupEnd(body) {
+  return body.pickup_end_time !== undefined ? body.pickup_end_time : body.end_time;
+}
+
+function appendRouteTimeColumns({
+  insertCols,
+  insertVals,
+  body,
+  hasPickupStartTime,
+  hasPickupEndTime,
+  hasDropStartTime,
+  hasDropEndTime,
+  hasStartTime,
+  hasEndTime,
+  hasStartPoint,
+  hasEndPoint,
+}) {
+  const pickupStart = normalizeRouteTimeInput(resolvePickupStart(body));
+  const pickupEnd = normalizeRouteTimeInput(resolvePickupEnd(body));
+  const dropStart = normalizeRouteTimeInput(body.drop_start_time);
+  const dropEnd = normalizeRouteTimeInput(body.drop_end_time);
+
+  if (hasPickupStartTime) {
+    insertCols.push('pickup_start_time');
+    insertVals.push(pickupStart);
+  } else if (hasStartTime) {
+    insertCols.push('start_time');
+    insertVals.push(pickupStart);
+  } else if (hasStartPoint) {
+    insertCols.push('start_point');
+    insertVals.push(pickupStart);
+  }
+
+  if (hasPickupEndTime) {
+    insertCols.push('pickup_end_time');
+    insertVals.push(pickupEnd);
+  } else if (hasEndTime) {
+    insertCols.push('end_time');
+    insertVals.push(pickupEnd);
+  } else if (hasEndPoint) {
+    insertCols.push('end_point');
+    insertVals.push(pickupEnd);
+  }
+
+  if (hasDropStartTime) {
+    insertCols.push('drop_start_time');
+    insertVals.push(dropStart);
+  }
+  if (hasDropEndTime) {
+    insertCols.push('drop_end_time');
+    insertVals.push(dropEnd);
+  }
+}
+
+function appendRouteTimeUpdates({
+  updates,
+  values,
+  i,
+  body,
+  hasPickupStartTime,
+  hasPickupEndTime,
+  hasDropStartTime,
+  hasDropEndTime,
+  hasStartTime,
+  hasEndTime,
+  hasStartPoint,
+  hasEndPoint,
+}) {
+  const pickupStartRaw = resolvePickupStart(body);
+  const pickupEndRaw = resolvePickupEnd(body);
+
+  if (pickupStartRaw !== undefined) {
+    const pickupStart = normalizeRouteTimeInput(pickupStartRaw);
+    if (hasPickupStartTime) {
+      updates.push(`pickup_start_time = $${i++}`);
+      values.push(pickupStart);
+    } else if (hasStartTime) {
+      updates.push(`start_time = $${i++}`);
+      values.push(pickupStart);
+    } else if (hasStartPoint) {
+      updates.push(`start_point = $${i++}`);
+      values.push(pickupStart);
+    }
+  }
+
+  if (pickupEndRaw !== undefined) {
+    const pickupEnd = normalizeRouteTimeInput(pickupEndRaw);
+    if (hasPickupEndTime) {
+      updates.push(`pickup_end_time = $${i++}`);
+      values.push(pickupEnd);
+    } else if (hasEndTime) {
+      updates.push(`end_time = $${i++}`);
+      values.push(pickupEnd);
+    } else if (hasEndPoint) {
+      updates.push(`end_point = $${i++}`);
+      values.push(pickupEnd);
+    }
+  }
+
+  if (body.drop_start_time !== undefined && hasDropStartTime) {
+    updates.push(`drop_start_time = $${i++}`);
+    values.push(normalizeRouteTimeInput(body.drop_start_time));
+  }
+  if (body.drop_end_time !== undefined && hasDropEndTime) {
+    updates.push(`drop_end_time = $${i++}`);
+    values.push(normalizeRouteTimeInput(body.drop_end_time));
+  }
+
+  return i;
+}
+
 const getAllRoutes = async (req, res) => {
   try {
     const hasDeletedAt = await hasColumn('routes', 'deleted_at');
     const hasRouteStops = await hasTable('route_stops');
     const hasRouteCode = await hasColumn('routes', 'route_code');
+    const hasPickupStartTime = await hasColumn('routes', 'pickup_start_time');
+    const hasPickupEndTime = await hasColumn('routes', 'pickup_end_time');
+    const hasDropStartTime = await hasColumn('routes', 'drop_start_time');
+    const hasDropEndTime = await hasColumn('routes', 'drop_end_time');
     const hasStartTime = await hasColumn('routes', 'start_time');
     const hasEndTime = await hasColumn('routes', 'end_time');
     const hasStartPoint = await hasColumn('routes', 'start_point');
@@ -52,6 +239,10 @@ const getAllRoutes = async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const validSortFields = ['route_name', 'distance_km', 'created_at', 'id'];
     if (hasRouteCode) validSortFields.push('route_code');
+    if (hasPickupStartTime) validSortFields.push('pickup_start_time');
+    if (hasPickupEndTime) validSortFields.push('pickup_end_time');
+    if (hasDropStartTime) validSortFields.push('drop_start_time');
+    if (hasDropEndTime) validSortFields.push('drop_end_time');
     if (hasStartTime) validSortFields.push('start_time');
     if (hasEndTime) validSortFields.push('end_time');
     if (hasStartPoint) validSortFields.push('start_point');
@@ -76,6 +267,10 @@ const getAllRoutes = async (req, res) => {
       params.push(`%${search}%`);
       const searchParts = [`r.route_name ILIKE $${params.length}`];
       if (hasRouteCode) searchParts.push(`r.route_code ILIKE $${params.length}`);
+      if (hasPickupStartTime) searchParts.push(`CAST(r.pickup_start_time AS TEXT) ILIKE $${params.length}`);
+      if (hasPickupEndTime) searchParts.push(`CAST(r.pickup_end_time AS TEXT) ILIKE $${params.length}`);
+      if (hasDropStartTime) searchParts.push(`CAST(r.drop_start_time AS TEXT) ILIKE $${params.length}`);
+      if (hasDropEndTime) searchParts.push(`CAST(r.drop_end_time AS TEXT) ILIKE $${params.length}`);
       if (hasStartTime) searchParts.push(`CAST(r.start_time AS TEXT) ILIKE $${params.length}`);
       if (hasEndTime) searchParts.push(`CAST(r.end_time AS TEXT) ILIKE $${params.length}`);
       if (hasStartPoint) searchParts.push(`r.start_point ILIKE $${params.length}`);
@@ -232,9 +427,19 @@ const getRouteById = async (req, res) => {
 
 const createRoute = async (req, res) => {
   try {
+    clearSchemaInspectorCache();
+    const timeValidationError = validateRouteTimeRanges(req.body);
+    if (timeValidationError) {
+      return errorResponse(res, 400, timeValidationError);
+    }
+
     const hasDistanceKm = await hasColumn('routes', 'distance_km');
     const hasTotalDistance = await hasColumn('routes', 'total_distance');
     const hasRouteCode = await hasColumn('routes', 'route_code');
+    const hasPickupStartTime = await hasColumn('routes', 'pickup_start_time');
+    const hasPickupEndTime = await hasColumn('routes', 'pickup_end_time');
+    const hasDropStartTime = await hasColumn('routes', 'drop_start_time');
+    const hasDropEndTime = await hasColumn('routes', 'drop_end_time');
     const hasStartTime = await hasColumn('routes', 'start_time');
     const hasEndTime = await hasColumn('routes', 'end_time');
     const hasStartPoint = await hasColumn('routes', 'start_point');
@@ -246,8 +451,6 @@ const createRoute = async (req, res) => {
       distance_km, 
       total_distance,
       route_code,
-      start_time,
-      end_time,
       estimated_time,
       is_active,
       stops = [] 
@@ -274,20 +477,19 @@ const createRoute = async (req, res) => {
         insertCols.push('route_code');
         insertVals.push(route_code ? String(route_code).trim() : null);
       }
-      if (hasStartTime) {
-        insertCols.push('start_time');
-        insertVals.push(start_time ? String(start_time).trim() : null);
-      } else if (hasStartPoint) {
-        insertCols.push('start_point');
-        insertVals.push(start_time ? String(start_time).trim() : null);
-      }
-      if (hasEndTime) {
-        insertCols.push('end_time');
-        insertVals.push(end_time ? String(end_time).trim() : null);
-      } else if (hasEndPoint) {
-        insertCols.push('end_point');
-        insertVals.push(end_time ? String(end_time).trim() : null);
-      }
+      appendRouteTimeColumns({
+        insertCols,
+        insertVals,
+        body: req.body,
+        hasPickupStartTime,
+        hasPickupEndTime,
+        hasDropStartTime,
+        hasDropEndTime,
+        hasStartTime,
+        hasEndTime,
+        hasStartPoint,
+        hasEndPoint,
+      });
       if (hasEstimatedTime) {
         insertCols.push('estimated_time');
         insertVals.push(estimated_time === '' || estimated_time == null ? null : Number(estimated_time));
@@ -311,7 +513,15 @@ const createRoute = async (req, res) => {
             await client.query(
               `INSERT INTO route_stops (route_id, pickup_point_id, pickup_time, drop_time, order_index, created_by, updated_by)
                VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-              [newRoute.id, stop.pickup_point_id, stop.pickup_time, stop.drop_time, i, req.user?.id || null, req.user?.id || null]
+              [
+                newRoute.id,
+                stop.pickup_point_id,
+                normalizeStopTimeInput(stop.pickup_time),
+                normalizeStopTimeInput(stop.drop_time),
+                i,
+                req.user?.id || null,
+                req.user?.id || null,
+              ]
             );
           } else {
             await client.query(
@@ -321,7 +531,7 @@ const createRoute = async (req, res) => {
                    drop_time = COALESCE($3, drop_time),
                    sequence_order = $4
                WHERE id = $5`,
-              [newRoute.id, stop.pickup_time || null, stop.drop_time || null, i, stop.pickup_point_id]
+              [newRoute.id, normalizeStopTimeInput(stop.pickup_time), normalizeStopTimeInput(stop.drop_time), i, stop.pickup_point_id]
             );
           }
         }
@@ -343,9 +553,19 @@ const createRoute = async (req, res) => {
 
 const updateRoute = async (req, res) => {
   try {
+    clearSchemaInspectorCache();
+    const timeValidationError = validateRouteTimeRanges(req.body);
+    if (timeValidationError) {
+      return errorResponse(res, 400, timeValidationError);
+    }
+
     const hasDistanceKm = await hasColumn('routes', 'distance_km');
     const hasTotalDistance = await hasColumn('routes', 'total_distance');
     const hasRouteCode = await hasColumn('routes', 'route_code');
+    const hasPickupStartTime = await hasColumn('routes', 'pickup_start_time');
+    const hasPickupEndTime = await hasColumn('routes', 'pickup_end_time');
+    const hasDropStartTime = await hasColumn('routes', 'drop_start_time');
+    const hasDropEndTime = await hasColumn('routes', 'drop_end_time');
     const hasStartTime = await hasColumn('routes', 'start_time');
     const hasEndTime = await hasColumn('routes', 'end_time');
     const hasStartPoint = await hasColumn('routes', 'start_point');
@@ -365,8 +585,6 @@ const updateRoute = async (req, res) => {
       distance_km, 
       total_distance,
       route_code,
-      start_time,
-      end_time,
       estimated_time,
       is_active,
       stops = []
@@ -400,20 +618,20 @@ const updateRoute = async (req, res) => {
         updates.push(`route_code = $${i++}`);
         values.push(route_code ? String(route_code).trim() : null);
       }
-      if (start_time !== undefined && hasStartTime) {
-        updates.push(`start_time = $${i++}`);
-        values.push(start_time ? String(start_time).trim() : null);
-      } else if (start_time !== undefined && hasStartPoint) {
-        updates.push(`start_point = $${i++}`);
-        values.push(start_time ? String(start_time).trim() : null);
-      }
-      if (end_time !== undefined && hasEndTime) {
-        updates.push(`end_time = $${i++}`);
-        values.push(end_time ? String(end_time).trim() : null);
-      } else if (end_time !== undefined && hasEndPoint) {
-        updates.push(`end_point = $${i++}`);
-        values.push(end_time ? String(end_time).trim() : null);
-      }
+      i = appendRouteTimeUpdates({
+        updates,
+        values,
+        i,
+        body: req.body,
+        hasPickupStartTime,
+        hasPickupEndTime,
+        hasDropStartTime,
+        hasDropEndTime,
+        hasStartTime,
+        hasEndTime,
+        hasStartPoint,
+        hasEndPoint,
+      });
       if (estimated_time !== undefined && hasEstimatedTime) {
         updates.push(`estimated_time = $${i++}`);
         values.push(estimated_time === '' || estimated_time == null ? null : Number(estimated_time));
@@ -451,7 +669,15 @@ const updateRoute = async (req, res) => {
             await client.query(
               `INSERT INTO route_stops (route_id, pickup_point_id, pickup_time, drop_time, order_index, created_by, updated_by)
                VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-              [id, stop.pickup_point_id, stop.pickup_time, stop.drop_time, i, req.user?.id || null, req.user?.id || null]
+              [
+                id,
+                stop.pickup_point_id,
+                normalizeStopTimeInput(stop.pickup_time),
+                normalizeStopTimeInput(stop.drop_time),
+                i,
+                req.user?.id || null,
+                req.user?.id || null,
+              ]
             );
           } else {
             await client.query(
@@ -461,7 +687,7 @@ const updateRoute = async (req, res) => {
                    drop_time = COALESCE($3, drop_time),
                    sequence_order = $4
                WHERE id = $5`,
-              [id, stop.pickup_time || null, stop.drop_time || null, i, stop.pickup_point_id]
+              [id, normalizeStopTimeInput(stop.pickup_time), normalizeStopTimeInput(stop.drop_time), i, stop.pickup_point_id]
             );
           }
         }

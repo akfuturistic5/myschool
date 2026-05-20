@@ -1733,8 +1733,10 @@ CREATE TABLE IF NOT EXISTS public.routes (
     id SERIAL PRIMARY KEY,
     route_name character varying(100) NOT NULL,
     route_code character varying(20),
-    start_point character varying(200),
-    end_point character varying(200),
+    pickup_start_time character varying(200),
+    pickup_end_time character varying(200),
+    drop_start_time time without time zone,
+    drop_end_time time without time zone,
     total_distance numeric(8,2),
     estimated_time integer, -- Minutes
     description text,
@@ -1841,9 +1843,8 @@ CREATE TABLE IF NOT EXISTS public.transport_allocations (
     staff_id integer REFERENCES public.staff(id) ON DELETE RESTRICT,
     student_lifecycle_id integer, -- The academic anchor for students
     
-    route_id integer NOT NULL REFERENCES public.routes(id) ON DELETE RESTRICT,
     pickup_point_id integer NOT NULL REFERENCES public.pickup_points(id) ON DELETE RESTRICT,
-    vehicle_id integer REFERENCES public.transport_vehicles(id) ON DELETE SET NULL,
+    vehicle_route_assignment_id integer NOT NULL REFERENCES public.vehicle_route_assignments(id) ON DELETE RESTRICT,
     fee_master_id integer REFERENCES public.transport_fee_master(id) ON DELETE SET NULL,
     
     assigned_amount numeric(12,2) NOT NULL DEFAULT 0.00,
@@ -1863,11 +1864,6 @@ CREATE TABLE IF NOT EXISTS public.transport_allocations (
     ),
     CONSTRAINT chk_transport_dates CHECK (end_date IS NULL OR end_date >= start_date),
     
-    -- ULTIMATE CONTEXT LOCK: A student cannot be assigned a stop that doesn't belong to the route
-    CONSTRAINT fk_transport_stop_context
-    FOREIGN KEY (pickup_point_id, route_id)
-    REFERENCES public.pickup_points (id, route_id),
-    
     -- LIFECYCLE LOCK: Anchors student transport to their active session enrollment
     CONSTRAINT fk_transport_student_lifecycle
     FOREIGN KEY (student_lifecycle_id, student_id, academic_year_id)
@@ -1876,7 +1872,6 @@ CREATE TABLE IF NOT EXISTS public.transport_allocations (
 
 -- Performance Indexes
 CREATE INDEX IF NOT EXISTS idx_transport_alloc_student ON public.transport_allocations(student_id);
-CREATE INDEX IF NOT EXISTS idx_transport_alloc_route ON public.transport_allocations(route_id);
 CREATE INDEX IF NOT EXISTS idx_transport_alloc_status ON public.transport_allocations(status);
 CREATE INDEX IF NOT EXISTS idx_transport_fee_point ON public.transport_fee_master(pickup_point_id);
 

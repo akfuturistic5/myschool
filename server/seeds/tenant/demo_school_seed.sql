@@ -24,7 +24,7 @@ DECLARE
     v_csub_math_id INT; v_csub_sci_id INT;
     v_lifecycle_1_id INT;
     v_fee_type_tuition INT; v_fee_id INT; v_fee_installment_id INT;
-    v_route_id INT; v_point_id INT; v_vehicle_id INT;
+    v_route_id INT; v_point_id INT; v_vehicle_id INT; v_vra_id INT;
     v_lib_cat_id INT; v_book_id INT; v_book_copy_id INT;
     v_room_id INT; v_slot_id INT;
     v_exam_id INT; v_exam_sched_id INT;
@@ -178,11 +178,12 @@ BEGIN
     INSERT INTO public.pickup_points (route_id, point_name, sequence_order) VALUES (v_route_id, 'Main Square', 1) RETURNING id INTO v_point_id;
     INSERT INTO public.transport_vehicles (vehicle_number, vehicle_type) VALUES ('MH-01-AB-1234', 'Bus') RETURNING id INTO v_vehicle_id;
     INSERT INTO public.vehicle_route_assignments (academic_year_id, route_id, vehicle_id, staff_id, valid_period) 
-    VALUES (v_year_id, v_route_id, v_vehicle_id, v_staff_1_id, daterange('2024-04-01', '2025-03-31'));
+    VALUES (v_year_id, v_route_id, v_vehicle_id, v_staff_1_id, daterange('2024-04-01', '2025-03-31'))
+    RETURNING id INTO v_vra_id;
     INSERT INTO public.transport_fee_master (academic_year_id, pickup_point_id, plan_name, student_amount) 
     VALUES (v_year_id, v_point_id, 'North Monthly', 1200);
-    INSERT INTO public.transport_allocations (academic_year_id, student_id, student_lifecycle_id, route_id, pickup_point_id, vehicle_id) 
-    VALUES (v_year_id, v_student_1_id, v_lifecycle_1_id, v_route_id, v_point_id, v_vehicle_id);
+    INSERT INTO public.transport_allocations (academic_year_id, student_id, student_lifecycle_id, vehicle_route_assignment_id, pickup_point_id) 
+    VALUES (v_year_id, v_student_1_id, v_lifecycle_1_id, v_vra_id, v_point_id);
     INSERT INTO public.student_transport_assignments (student_id, academic_year_id, route_id, pickup_point_id) 
     VALUES (v_student_1_id, v_year_id, v_route_id, v_point_id);
     INSERT INTO public.student_hostel_assignments (student_id, academic_year_id, bed_number) 
