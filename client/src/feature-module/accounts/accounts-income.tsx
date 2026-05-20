@@ -23,6 +23,9 @@ import { selectSelectedAcademicYearId } from "../../core/data/redux/academicYear
 import { getAccountsErrorMessage } from "./accountsApiErrors";
 import { fetchAllAccountsPages, parseAccountsListResponse } from "./accountsListUtils";
 import { exportAccountsExcel, exportAccountsPdf, printAccountsData } from "./accountsExportUtils";
+import { selectUser } from "../../core/data/redux/authSlice";
+import { getSchoolLogoSrc } from "../../core/utils/schoolLogo";
+import SchoolLogoImage from "../../core/common/schoolLogoImage";
 import { createAccountsTableChangeHandler } from "./accountsTableHandlers";
 
 function mapIncomeApiToRow(r: any) {
@@ -43,6 +46,8 @@ function mapIncomeApiToRow(r: any) {
 const AccountsIncome = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const user = useSelector(selectUser);
+  const schoolLogoSrc = getSchoolLogoSrc(user);
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -924,11 +929,16 @@ const AccountsIncome = () => {
           <div className="modal-content">
             <div className="modal-wrapper">
               <div className="invoice-popup-head d-flex align-items-center justify-content-between mb-4">
-                <span>
-                  <ImageWithBasePath src="assets/img/logo.svg" alt="Img" />
-                </span>
+                <div className="d-flex align-items-center">
+                  <SchoolLogoImage
+                    src={schoolLogoSrc}
+                    alt="School Logo"
+                    style={{ height: "40px", marginRight: "12px", objectFit: "contain" }}
+                  />
+                  <h3 className="mb-0 text-dark fw-bold">{user?.school_name || "PreSkool"}</h3>
+                </div>
                 <div className="popup-title">
-                  <h2>UNIVERSITY NAME</h2>
+                  <h2>TAX INVOICE</h2>
                   <p>Original For Recipient</p>
                 </div>
               </div>

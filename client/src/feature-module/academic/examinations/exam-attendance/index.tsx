@@ -46,7 +46,10 @@ const ExamAttendance = () => {
       try {
         if (userLoading || !(user as any)?.id) return;
         if (selfOnly) {
-          const res = await apiService.listSelfExams({ academic_year_id: academicYearId || undefined });
+          const res = await apiService.listSelfExams({
+            academic_year_id: academicYearId || undefined,
+            for_timetable: true
+          });
           if (cancelled) return;
           const raw = (res as any)?.data;
           const nextExams = Array.isArray(raw?.exams) ? raw.exams : (Array.isArray(raw) ? raw : []);
