@@ -66,7 +66,7 @@ import ExamSchedule from "../academic/examinations/exam-schedule";
 import Grade from "../academic/examinations/grade";
 import ScheduleClasses from "../academic/schedule-classes";
 import AccountsIncome from "../accounts/accounts-income";
-import AccountsInvoices from "../accounts/accounts-invoices";
+// import AccountsInvoices from "../accounts/accounts-invoices"; // temporarily hidden — re-enable with route below
 import AccountsTransactions from "../accounts/accounts-transactions";
 import AddInvoice from "../accounts/add-invoice";
 import EditInvoice from "../accounts/edit-invoice";
@@ -1321,11 +1321,12 @@ export const publicRoutes = [
     element: guardAccountsModule(<AccountsIncome />),
     route: Route,
   },
-  {
-    path: routes.accountsInvoices,
-    element: guardAccountsModule(<AccountsInvoices />),
-    route: Route,
-  },
+  // Accounts Invoices list — temporarily hidden (re-enable with sidebar menu item)
+  // {
+  //   path: routes.accountsInvoices,
+  //   element: guardAccountsModule(<AccountsInvoices />),
+  //   route: Route,
+  // },
   {
     path: routes.accountsTransactions,
     element: guardAccountsModule(<AccountsTransactions />),

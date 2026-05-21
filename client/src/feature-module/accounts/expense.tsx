@@ -35,6 +35,7 @@ function mapExpenseApiToRow(r: any) {
     amount: formatUsdDisplay(r.amount),
     invoiceNo: r.invoice_no ?? "",
     paymentMethod: r.payment_method ?? "",
+    status: r.status === "Pending" ? "Pending" : "Completed",
   };
 }
 
@@ -184,6 +185,7 @@ const Expense = () => {
     { key: "amount", header: "Amount" },
     { key: "invoice_no", header: "Invoice No" },
     { key: "payment_method", header: "Payment Method" },
+    { key: "status", header: "Status" },
   ];
 
   const runExportExcel = async () => {
@@ -199,6 +201,7 @@ const Expense = () => {
       amount: r.amount ?? "",
       invoice_no: r.invoice_no ?? "",
       payment_method: r.payment_method ?? "",
+      status: r.status === "Pending" ? "Pending" : "Completed",
     }));
     exportAccountsExcel(flat, expenseExportColumns, "expenses");
   };
@@ -216,6 +219,7 @@ const Expense = () => {
       amount: r.amount ?? "",
       invoice_no: r.invoice_no ?? "",
       payment_method: r.payment_method ?? "",
+      status: r.status === "Pending" ? "Pending" : "Completed",
     }));
     exportAccountsPdf(flat, expenseExportColumns, "expenses", "Expenses");
   };
@@ -233,6 +237,7 @@ const Expense = () => {
       amount: r.amount ?? "",
       invoice_no: r.invoice_no ?? "",
       payment_method: r.payment_method ?? "",
+      status: r.status === "Pending" ? "Pending" : "Completed",
     }));
     printAccountsData("Expenses", expenseExportColumns, flat);
   };
@@ -345,6 +350,27 @@ const Expense = () => {
         key: "payment_method",
         sorter: true,
         sortOrder: sortOrderFor("payment_method"),
+      },
+      {
+        title: "Status",
+        dataIndex: "status",
+        key: "status",
+        sorter: true,
+        sortOrder: sortOrderFor("status"),
+        render: (status: string) => (
+          <span
+            className={`badge d-inline-flex align-items-center ${
+              status === "Completed"
+                ? "badge-soft-success"
+                : status === "Pending"
+                  ? "badge-soft-warning"
+                  : "badge-soft-secondary"
+            }`}
+          >
+            <i className="ti ti-circle-filled fs-5 me-1" />
+            {status}
+          </span>
+        ),
       },
       {
         title: "Action",

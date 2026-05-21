@@ -27,6 +27,7 @@ const {
   getLeaveApplications,
   getMyLeaveApplications,
   getParentChildrenLeaves,
+  getParentChildrenLeaveSummary,
   getGuardianWardLeaves,
 } = require('../controllers/leaveApplicationController');
 
@@ -49,6 +50,8 @@ router.post('/:id/cancel', protectApi, requireRole(ALL_AUTHENTICATED_ROLES), val
 
 // GET /api/leave-applications/me - current student's or staff's leaves
 router.get('/me', protectApi, requireRole(ALL_AUTHENTICATED_ROLES), getMyLeaveApplications);
+// GET /api/leave-applications/parent-children/summary - approved/available leave totals (Parent Dashboard cards)
+router.get('/parent-children/summary', protectApi, requireRole(ALL_AUTHENTICATED_ROLES), getParentChildrenLeaveSummary);
 // GET /api/leave-applications/parent-children - parent's children leaves (for Parent Dashboard)
 router.get('/parent-children', protectApi, requireRole(ALL_AUTHENTICATED_ROLES), getParentChildrenLeaves);
 // GET /api/leave-applications/guardian-wards - guardian's ward leaves (for Guardian Dashboard)

@@ -5,6 +5,7 @@ import { all_routes } from "../../router/all_routes";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { useParents } from "../../../core/hooks/useParents";
 import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
+import { useParentLeaveSummary } from "../../../core/hooks/useParentLeaveSummary";
 import { useStudentFees } from "../../../core/hooks/useStudentFees";
 import { useStudentExamResults, type StudentExamRow } from "../../../core/hooks/useStudentExamResults";
 import { useStudentAttendance } from "../../../core/hooks/useStudentAttendance";
@@ -134,6 +135,9 @@ const ParentDashboard = () => {
     limit: 50,
     studentId: selectedChild?.student_id ?? null,
   });
+  const { summary: leaveSummary, loading: leaveSummaryLoading } = useParentLeaveSummary(
+    selectedChild?.student_id ?? null
+  );
   const { data: feeDataRaw, loading: feeLoading } = useStudentFees(selectedChild?.student_id ?? null, resolvedAcademicYearId);
   const feeData = useMemo(() => {
     if (!feeDataRaw || !Array.isArray(feeDataRaw) || feeDataRaw.length === 0) return null;
@@ -223,29 +227,10 @@ const ParentDashboard = () => {
     });
   }, [selectedChild, allSchedules]);
 
-  // Leave counts by type (from real leave data - use filtered for selected child)
-  const leaveCounts = useMemo(() => {
-    const t = (s?: string) => String(s || "").toLowerCase();
-    const approvedLeaves = myLeaves.filter((l: { status?: string }) => t(l.status || "") === "approved");
-    const sumDays = (rows: Array<{ noOfDays?: string | number }>) =>
-      rows.reduce((sum, row) => {
-        const days = Number(row?.noOfDays || 0);
-        return sum + (Number.isFinite(days) && days > 0 ? days : 0);
-      }, 0);
-    const medical = approvedLeaves.filter((l: { leaveType?: string }) => {
-      const lt = t(l.leaveType);
-      return lt.includes("medical") || lt.includes("sick");
-    });
-    const casual = approvedLeaves.filter((l: { leaveType?: string }) => {
-      const lt = t(l.leaveType);
-      return lt.includes("casual") || lt.includes("casual leave");
-    });
-    return {
-      medical: sumDays(medical),
-      casual: sumDays(casual),
-      total: sumDays(approvedLeaves),
-    };
-  }, [myLeaves]);
+  const formatLeaveAvailable = (available: number, limit: number) => {
+    if (limit > 0) return String(available);
+    return "—";
+  };
 
   useEffect(() => {
     if (!children.length) return;
@@ -483,8 +468,15 @@ const ParentDashboard = () => {
                     </span>
                     <h6 className="mb-2">Medical Leaves</h6>
                     <div className="d-flex align-items-center justify-content-between text-default">
-                      <p className="border-end mb-0">Used : {leaveCounts.medical}</p>
-                      <p className="mb-0">—</p>
+                      <p className="border-end mb-0">
+                        Used : {leaveSummaryLoading ? "…" : leaveSummary.medical.used}
+                      </p>
+                      <p className="mb-0">
+                        Available :{" "}
+                        {leaveSummaryLoading
+                          ? "…"
+                          : formatLeaveAvailable(leaveSummary.medical.available, leaveSummary.medical.limit)}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -495,8 +487,15 @@ const ParentDashboard = () => {
                     </span>
                     <h6 className="mb-2">Casual Leaves</h6>
                     <div className="d-flex align-items-center justify-content-between text-default">
-                      <p className="border-end mb-0">Used : {leaveCounts.casual}</p>
-                      <p className="mb-0">—</p>
+                      <p className="border-end mb-0">
+                        Used : {leaveSummaryLoading ? "…" : leaveSummary.casual.used}
+                      </p>
+                      <p className="mb-0">
+                        Available :{" "}
+                        {leaveSummaryLoading
+                          ? "…"
+                          : formatLeaveAvailable(leaveSummary.casual.available, leaveSummary.casual.limit)}
+                      </p>
                     </div>
                   </div>
                 </div>

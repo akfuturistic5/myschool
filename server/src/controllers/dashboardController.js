@@ -39,6 +39,9 @@ function parseStarStudentsTimeRange(req) {
   return 'all_time';
 }
 
+/** Active staff row — status + deleted_at (do not use s.is_active; missing on some tenant DBs). */
+const STAFF_ACTIVE_SQL = "s.deleted_at IS NULL AND LOWER(TRIM(COALESCE(s.status, 'Active'))) = 'active'";
+
 /**
  * Staff member with teaching activity in an academic year (staff id = class_schedules.teacher_id).
  * @param {string} s SQL alias for staff (e.g. 's')
@@ -916,7 +919,7 @@ const getBestPerformers = async (req, res) => {
        INNER JOIN users u ON u.id = s.user_id
        LEFT JOIN class_schedules cs ON cs.teacher_id = s.id
          ${hasYearFilter ? 'AND cs.academic_year_id = $2' : ''}
-       WHERE s.deleted_at IS NULL AND s.is_active = true
+       WHERE ${STAFF_ACTIVE_SQL}
        GROUP BY s.id, u.first_name, u.last_name, s.photo_url
        ORDER BY schedule_count DESC NULLS LAST, u.first_name ASC, u.last_name ASC
        LIMIT $1`,

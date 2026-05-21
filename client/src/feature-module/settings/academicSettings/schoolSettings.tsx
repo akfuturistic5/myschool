@@ -114,6 +114,15 @@ const SchoolSettings = () => {
       setEmail(trimmedEmail);
       setFax(trimmedFax);
       setAddress(trimmedAddress);
+      dispatch(patchAuthUser({ school_name: trimmedName }));
+      try {
+        const me = await apiService.getMe();
+        if (me?.status === "SUCCESS" && me.data?.school_name) {
+          dispatch(patchAuthUser({ school_name: me.data.school_name }));
+        }
+      } catch {
+        /* header already patched with trimmedName */
+      }
       setMessage("School profile updated successfully.");
     } catch (e) {
       setError((e as Error)?.message || "Failed to update school profile");

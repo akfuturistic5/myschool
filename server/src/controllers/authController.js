@@ -456,12 +456,37 @@ const login = async (req, res) => {
       }
     }
 
+    let schoolName = tokenUser.school_name || null;
+    if (tokenUser.school_id != null) {
+      try {
+        const nameRes = await masterQuery(
+          `SELECT school_name FROM schools WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+          [tokenUser.school_id]
+        );
+        const masterName = String(nameRes.rows?.[0]?.school_name || '').trim();
+        if (masterName) {
+          schoolName = masterName;
+        }
+      } catch (e) {
+        console.warn('getMe: could not load school name from master_db:', e.message);
+      }
+    }
+    try {
+      const profile = await getSchoolProfile(tokenUser.school_name || null);
+      const profileName = String(profile?.school_name || '').trim();
+      if (profileName) {
+        schoolName = profileName;
+      }
+    } catch (e) {
+      console.warn('getMe: could not load school name from school_profile:', e.message);
+    }
+
     const userData = {
       ...user,
       display_name: displayName,
       display_role: displayRole,
       account_disabled: accountDisabled,
-      school_name: tokenUser.school_name,
+      school_name: schoolName,
       school_type: tokenUser.school_type,
       school_logo: schoolLogo,
       institute_number: tokenUser.institute_number,
