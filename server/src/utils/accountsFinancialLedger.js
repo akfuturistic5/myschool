@@ -59,6 +59,10 @@ function mapLedgerToExpense(row) {
     invoice_no: row.invoice_no,
     payment_method: row.payment_mode,
     status: row.status,
+    document_name: row.document_name ?? null,
+    file_path: row.file_path ?? null,
+    file_size: row.file_size != null ? Number(row.file_size) : null,
+    file_type: row.file_type ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -81,6 +85,10 @@ function mapLedgerToIncome(row) {
     invoice_no: row.invoice_no,
     payment_method: row.payment_mode,
     status: row.status,
+    document_name: row.document_name ?? null,
+    file_path: row.file_path ?? null,
+    file_size: row.file_size != null ? Number(row.file_size) : null,
+    file_type: row.file_type ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -105,13 +113,23 @@ function mapLedgerToTransaction(row) {
     category_id: row.category_id,
     category_name: row.category_name ?? null,
     academic_year_id: row.academic_year_id,
+    document_name: row.document_name ?? null,
+    file_path: row.file_path ?? null,
+    file_size: row.file_size != null ? Number(row.file_size) : null,
+    file_type: row.file_type ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
 }
 
 const LEDGER_FROM = `FROM financial_ledger fl
-  LEFT JOIN account_categories cat ON cat.id = fl.category_id AND cat.deleted_at IS NULL`;
+  LEFT JOIN account_categories cat ON cat.id = fl.category_id AND cat.deleted_at IS NULL
+  LEFT JOIN (
+    SELECT DISTINCT ON (ledger_id) ledger_id, document_name, file_path, file_size, file_type
+    FROM financial_documents
+    WHERE deleted_at IS NULL
+    ORDER BY ledger_id, id DESC
+  ) fd ON fd.ledger_id = fl.id`;
 
 module.exports = {
   padCode,

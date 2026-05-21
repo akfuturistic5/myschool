@@ -242,6 +242,14 @@ const AccountCategories = () => {
         key: "description",
         sorter: true,
         sortOrder: sortOrderFor("description"),
+        render: (text: any) => (
+          <div
+            className="text-wrap text-break"
+            style={{ minWidth: "150px", maxWidth: "250px", wordBreak: "break-word", whiteSpace: "normal" }}
+          >
+            {text || "—"}
+          </div>
+        ),
       },
       {
         title: "Status",
@@ -258,7 +266,7 @@ const AccountCategories = () => {
               <Link
                 to="#"
                 className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                data-bs-toggle="dropdown"
+                data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                 aria-expanded="false"
               >
                 <i className="ti ti-dots-vertical fs-14" />

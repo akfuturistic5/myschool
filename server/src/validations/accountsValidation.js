@@ -35,6 +35,7 @@ const updateIncomeSchema = Joi.object({
   payment_method: Joi.string().trim().max(64).allow(null, ''),
   category_id: Joi.number().integer().positive().optional(),
   academic_year_id: Joi.number().integer().positive().allow(null),
+  remove_document: Joi.boolean().optional(),
 }).min(1);
 
 const createInvoiceSchema = Joi.object({
@@ -116,6 +117,7 @@ const updateExpenseSchema = Joi.object({
   payment_method: Joi.string().trim().max(64).allow(null, ''),
   status: Joi.string().valid('Completed', 'Pending').optional(),
   academic_year_id: Joi.number().integer().positive().allow(null),
+  remove_document: Joi.boolean().optional(),
 }).min(1);
 
 module.exports = {

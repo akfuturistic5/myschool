@@ -233,6 +233,14 @@ const AccountsTransactions = () => {
         key: "description",
         sorter: true,
         sortOrder: sortOrderFor("description"),
+        render: (text: any) => (
+          <div
+            className="text-wrap text-break"
+            style={{ minWidth: "150px", maxWidth: "250px", wordBreak: "break-word", whiteSpace: "normal" }}
+          >
+            {text || "—"}
+          </div>
+        ),
       },
       {
         title: "Transaction Date",
