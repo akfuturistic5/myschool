@@ -12,6 +12,7 @@ import TagInput from "../../../core/common/Taginput";
 import { useBloodGroups } from "../../../core/hooks/useBloodGroups";
 import { useDepartments } from "../../../core/hooks/useDepartments";
 import { useDesignations } from "../../../core/hooks/useDesignations";
+import { useStaffRoleOptions } from "../../../core/hooks/useStaffRoleOptions";
 import { staffDirectoryFriendlyError } from "./staffDirectoryErrors";
 
 const genderOptions: Option[] = [
@@ -85,6 +86,12 @@ export default function StaffProfileForm({
     loading: bloodGroupsLoading,
     error: bloodGroupsError,
   } = useBloodGroups();
+  const {
+    roleOptions,
+    driverRoleId,
+    loading: rolesLoading,
+    error: rolesError,
+  } = useStaffRoleOptions();
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -96,6 +103,7 @@ export default function StaffProfileForm({
   const [gender, setGender] = useState<string | null>(null);
   const [departmentId, setDepartmentId] = useState<string | null>(null);
   const [designationId, setDesignationId] = useState<string | null>(null);
+  const [roleId, setRoleId] = useState<string | null>(null);
   const [bloodGroupId, setBloodGroupId] = useState<string | null>(null);
   const [maritalStatus, setMaritalStatus] = useState<string | null>(null);
   const [fatherName, setFatherName] = useState("");
@@ -183,7 +191,7 @@ export default function StaffProfileForm({
   );
 
   const metaBusy =
-    departmentsLoading || designationsLoading || bloodGroupsLoading;
+    departmentsLoading || designationsLoading || bloodGroupsLoading || rolesLoading;
 
   const supportStaffDepartmentId = useMemo(() => {
     const row = ((departments as any[]) || []).find(
@@ -289,6 +297,10 @@ export default function StaffProfileForm({
   }, [isDriverSelected, supportStaffDepartmentId]);
 
   useEffect(() => {
+    if (isDriverSelected && driverRoleId) setRoleId(driverRoleId);
+  }, [isDriverSelected, driverRoleId]);
+
+  useEffect(() => {
     if (!initialStaff || mode !== "edit") return;
     const s = initialStaff;
     setFirstName(String(s.first_name ?? ""));
@@ -299,6 +311,7 @@ export default function StaffProfileForm({
     setGender(s.gender != null && s.gender !== "" ? String(s.gender) : null);
     setDepartmentId(s.department_id != null ? String(s.department_id) : null);
     setDesignationId(s.designation_id != null ? String(s.designation_id) : null);
+    setRoleId(s.role_id != null ? String(s.role_id) : null);
     setBloodGroupId(s.blood_group_id != null ? String(s.blood_group_id) : null);
     setMaritalStatus(
       s.marital_status != null ? String(s.marital_status) : null
@@ -374,6 +387,7 @@ export default function StaffProfileForm({
     if (!employeeCode.trim()) m.push("Employee code");
     if (!departmentId) m.push("Department");
     if (!designationId) m.push("Designation");
+    if (!roleId) m.push("Role");
     if (!gender) m.push("Gender");
     if (!phone.trim()) m.push("Primary phone");
     if (!email.trim()) m.push("Email");
@@ -405,6 +419,7 @@ export default function StaffProfileForm({
     employeeCode,
     departmentId,
     designationId,
+    roleId,
     gender,
     phone,
     email,
@@ -461,6 +476,7 @@ export default function StaffProfileForm({
         blood_group_id: bloodGroupId ? Number(bloodGroupId) : null,
         designation_id: designationId ? Number(designationId) : null,
         department_id: departmentId ? Number(departmentId) : null,
+        role_id: roleId ? Number(roleId) : null,
         qualification: qualification.trim() || null,
         experience_years: (() => {
           if (!experienceYears.trim()) return null;
@@ -572,6 +588,7 @@ export default function StaffProfileForm({
       bloodGroupId,
       designationId,
       departmentId,
+      roleId,
       qualification,
       experienceYears,
       salary,
@@ -776,6 +793,24 @@ export default function StaffProfileForm({
                       options={desigOptions}
                       value={designationId}
                       onChange={(v) => setDesignationId(v)}
+                    />
+                  )}
+                </div>
+              </div>
+              <div className="col-xxl col-xl-3 col-md-6">
+                <div className="mb-3">
+                  <label className="form-label">
+                    Role
+                    <Req />
+                  </label>
+                  {loadOrError(
+                    rolesLoading,
+                    rolesError,
+                    <CommonSelect
+                      className="select"
+                      options={roleOptions}
+                      value={roleId}
+                      onChange={(v) => setRoleId(v)}
                     />
                   )}
                 </div>

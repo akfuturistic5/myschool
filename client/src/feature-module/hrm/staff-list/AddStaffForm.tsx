@@ -11,6 +11,7 @@ import TagInput from "../../../core/common/Taginput";
 import { useBloodGroups } from "../../../core/hooks/useBloodGroups";
 import { useDepartments } from "../../../core/hooks/useDepartments";
 import { useDesignations } from "../../../core/hooks/useDesignations";
+import { useStaffRoleOptions } from "../../../core/hooks/useStaffRoleOptions";
 
 import { staffDirectoryFriendlyError } from "./staffDirectoryErrors";
 
@@ -60,6 +61,13 @@ export default function AddStaffForm() {
   const { departments, loading: departmentsLoading, error: departmentsError } = useDepartments();
   const { designations, loading: designationsLoading, error: designationsError } = useDesignations();
   const { bloodGroups, loading: bloodGroupsLoading, error: bloodGroupsError } = useBloodGroups();
+  const {
+    roleOptions,
+    administrativeRoleId,
+    driverRoleId,
+    loading: rolesLoading,
+    error: rolesError,
+  } = useStaffRoleOptions();
 
   const [owner, setOwner] = useState<string[]>([]);
   const [firstName, setFirstName] = useState("");
@@ -72,6 +80,7 @@ export default function AddStaffForm() {
   const [gender, setGender] = useState<string | null>(null);
   const [departmentId, setDepartmentId] = useState<string | null>(null);
   const [designationId, setDesignationId] = useState<string | null>(null);
+  const [roleId, setRoleId] = useState<string | null>(null);
   const [bloodGroupId, setBloodGroupId] = useState<string | null>(null);
   const [maritalStatus, setMaritalStatus] = useState<string | null>(null);
   const [fatherName, setFatherName] = useState("");
@@ -154,7 +163,8 @@ export default function AddStaffForm() {
   );
 
 
-  const metaBusy = departmentsLoading || designationsLoading || bloodGroupsLoading;
+  const metaBusy =
+    departmentsLoading || designationsLoading || bloodGroupsLoading || rolesLoading;
 
   const supportStaffDepartmentId = useMemo(() => {
     const row = ((departments as any[]) || []).find(
@@ -242,6 +252,14 @@ export default function AddStaffForm() {
     }
   }, [isDriverSelected, supportStaffDepartmentId]);
 
+  useEffect(() => {
+    if (isDriverSelected && driverRoleId) {
+      setRoleId(driverRoleId);
+      return;
+    }
+    if (administrativeRoleId) setRoleId(administrativeRoleId);
+  }, [isDriverSelected, driverRoleId, administrativeRoleId]);
+
   const getMissingPersonalFields = useCallback((): string[] => {
     const m: string[] = [];
     if (!firstName.trim()) m.push("First name");
@@ -249,6 +267,7 @@ export default function AddStaffForm() {
     if (!employeeCode.trim()) m.push("Employee code");
     if (!departmentId) m.push("Department");
     if (!designationId) m.push("Designation");
+    if (!roleId) m.push("Role");
     if (!gender) m.push("Gender");
     if (!phone.trim()) m.push("Primary phone");
     if (!email.trim()) m.push("Email");
@@ -278,6 +297,7 @@ export default function AddStaffForm() {
     employeeCode,
     departmentId,
     designationId,
+    roleId,
     gender,
     phone,
     email,
@@ -328,6 +348,7 @@ export default function AddStaffForm() {
         blood_group_id: bloodGroupId ? Number(bloodGroupId) : null,
         designation_id: designationId ? Number(designationId) : null,
         department_id: departmentId ? Number(departmentId) : null,
+        role_id: roleId ? Number(roleId) : null,
         qualification: qualification.trim() || null,
         experience_years: (() => {
           if (!experienceYears.trim()) return null;
@@ -431,6 +452,7 @@ export default function AddStaffForm() {
       bloodGroupId,
       designationId,
       departmentId,
+      roleId,
       qualification,
       experienceYears,
       salary,
@@ -582,6 +604,24 @@ export default function AddStaffForm() {
                     designationsLoading,
                     designationsError,
                     <CommonSelect className="select" options={desigOptions} value={designationId} onChange={(v) => setDesignationId(v)} />
+                  )}
+                </div>
+              </div>
+              <div className="col-xxl col-xl-3 col-md-6">
+                <div className="mb-3">
+                  <label className="form-label">
+                    Role
+                    <Req />
+                  </label>
+                  {loadOrError(
+                    rolesLoading,
+                    rolesError,
+                    <CommonSelect
+                      className="select"
+                      options={roleOptions}
+                      value={roleId}
+                      onChange={(v) => setRoleId(v)}
+                    />
                   )}
                 </div>
               </div>

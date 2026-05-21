@@ -2292,9 +2292,17 @@ class ApiService {
     if (params.page) searchParams.set('page', params.page);
     if (params.limit) searchParams.set('limit', params.limit);
     if (params.search) searchParams.set('search', params.search);
-    if (params.role && params.role !== 'all') searchParams.set('role', params.role);
+    if (params.role != null && String(params.role).trim() !== '' && params.role !== 'all') {
+      searchParams.set('role', params.role);
+    }
     if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
-    if (params.status) searchParams.set('status', params.status);
+    if (
+      params.status != null &&
+      String(params.status).trim() !== '' &&
+      params.status !== 'all'
+    ) {
+      searchParams.set('status', params.status);
+    }
     if (params.sortField) searchParams.set('sortField', params.sortField);
     if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
 
@@ -2322,6 +2330,18 @@ class ApiService {
     });
   }
 
+  /** Store under school storage uploads/transport-licenses; returns { url, relativePath } in data */
+  async uploadTransportLicensePhoto(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', 'uploads/transport-licenses');
+    return this.makeRequest('/storage/upload', {
+      method: 'POST',
+      body: formData,
+      isMultipart: true,
+    });
+  }
+
   async deleteTransportAssignment(vehicleId) {
     return this.makeRequest(`/transport/assignments/${vehicleId}`, {
       method: 'DELETE'
@@ -2335,6 +2355,9 @@ class ApiService {
     if (params.search) searchParams.set('search', params.search);
     if (params.status) searchParams.set('status', params.status);
     if (params.route_id && params.route_id !== 'all') searchParams.set('route_id', params.route_id);
+    if (params.pickup_point_id && params.pickup_point_id !== 'all') {
+      searchParams.set('pickup_point_id', params.pickup_point_id);
+    }
     if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
     if (params.sortField) searchParams.set('sortField', params.sortField);
     if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);

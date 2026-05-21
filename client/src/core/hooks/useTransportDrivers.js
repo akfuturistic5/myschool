@@ -3,7 +3,16 @@ import { apiService } from '../services/apiService';
 
 const defaultImg = 'assets/img/parents/parent-01.jpg';
 
-export const useTransportDrivers = (initialParams = {}) => {
+/** DATE-only values as calendar strings — never parse as Date (avoids TZ off-by-one). */
+function formatDateOnlyForDisplay(raw) {
+  if (raw == null || raw === '') return '—';
+  const s = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : '—';
+}
+
+export const useTransportDrivers = (queryParams = {}) => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -14,22 +23,14 @@ export const useTransportDrivers = (initialParams = {}) => {
     totalPages: 0
   });
 
-  const [params, setParams] = useState({
-    page: 1,
-    limit: 10,
-    search: '',
-    status: 'all',
-    ...initialParams
-  });
-
   const fetchDrivers = useCallback(async (overrides = {}) => {
     try {
       setLoading(true);
       setError(null);
-      
-      const combinedParams = { ...params, ...overrides };
+
+      const combinedParams = { ...queryParams, ...overrides };
       const response = await apiService.getTransportDrivers(combinedParams);
-      
+
       if (response && response.status === "SUCCESS") {
         const list = response.data || [];
         const mapped = await Promise.all(list.map(async (row, index) => ({
@@ -37,16 +38,22 @@ export const useTransportDrivers = (initialParams = {}) => {
           id: row.id,
           displayId: row.driver_code || String(row.id),
           name: row.name || row.driver_name || [row.first_name, row.last_name].filter(Boolean).join(' ').trim() || 'N/A',
-          role: row.role ? `${row.role.charAt(0).toUpperCase()}${row.role.slice(1)}` : 'Driver',
+          role: row.role
+            ? `${String(row.role).charAt(0).toUpperCase()}${String(row.role).slice(1).toLowerCase()}`
+            : 'Driver',
           phone: row.phone || 'N/A',
-          driverLicenseNo: row.license_number || 'N/A',
-          address: row.address || 'N/A',
+          driverLicenseNo: row.license_number || (row.role === 'conductor' ? 'N/A' : ''),
+          licenseExpiry:
+            row.role === 'conductor'
+              ? '—'
+              : formatDateOnlyForDisplay(row.license_expiry),
+          licensePhotoUrl: row.license_photo_url || null,
           status: row.is_active ? 'Active' : 'Inactive',
           statusClass: row.is_active ? 'badge badge-soft-success' : 'badge badge-soft-danger',
           img: (row.photo_url ? await apiService.resolveAvatarUrl(row.photo_url) : '') || defaultImg,
           originalData: row,
         })));
-        
+
         setData(mapped);
         if (response.metadata) {
           setMetadata(response.metadata);
@@ -61,7 +68,7 @@ export const useTransportDrivers = (initialParams = {}) => {
     } finally {
       setLoading(false);
     }
-  }, [params]);
+  }, [queryParams]);
 
   useEffect(() => {
     fetchDrivers();
@@ -72,8 +79,6 @@ export const useTransportDrivers = (initialParams = {}) => {
     loading,
     error,
     metadata,
-    params,
-    setParams,
     refetch: fetchDrivers,
   };
 };

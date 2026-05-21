@@ -136,12 +136,37 @@ const HostelModal = ({
     return Array.isArray(d) ? d : [];
   };
 
+  const isWardenStaffRow = (s: Record<string, unknown>, wardenRoleId: number | null) => {
+    const roleName = String(s.user_role_name ?? s.role_name ?? "")
+      .trim()
+      .toLowerCase();
+    if (roleName === "warden") return true;
+    const rid = s.role_id != null ? Number(s.role_id) : null;
+    return wardenRoleId != null && rid != null && !Number.isNaN(rid) && rid === wardenRoleId;
+  };
+
   const loadWardenStaff = useCallback(async () => {
     try {
-      const res = await apiService.getStaff();
-      const rows = listStaffFromResponse(res);
+      const [staffRes, rolesRes] = await Promise.all([
+        apiService.getStaff(),
+        apiService.getUserRoles(),
+      ]);
+      const rows = listStaffFromResponse(staffRes);
+      let wardenRoleId: number | null = null;
+      const rolesPayload = rolesRes as { status?: string; data?: { id?: number; role_name?: string }[] };
+      if (rolesPayload?.status === "SUCCESS" && Array.isArray(rolesPayload.data)) {
+        const wardenRole = rolesPayload.data.find(
+          (r) => String(r.role_name ?? "").trim().toLowerCase() === "warden"
+        );
+        if (wardenRole?.id != null) wardenRoleId = Number(wardenRole.id);
+      }
       const opts: SelectOption[] = rows
-        .filter((s: any) => s.user_id != null && String(s.user_id).trim() !== "")
+        .filter(
+          (s: any) =>
+            s.user_id != null &&
+            String(s.user_id).trim() !== "" &&
+            isWardenStaffRow(s, wardenRoleId)
+        )
         .map((s: any) => ({
           value: String(s.user_id),
           label:
@@ -1103,7 +1128,7 @@ const HostelModal = ({
                       options={wardenOptionsForAdd}
                       value={addHostelWarden === "" ? "" : addHostelWarden}
                       onChange={(v) => setAddHostelWarden(v ?? "")}
-                      placeholder={wardenStaffOptions.length ? "Select staff" : "Loading staff…"}
+                      placeholder={wardenStaffOptions.length ? "Select warden" : "No warden staff found"}
                     />
                   </div>
                 </div>
@@ -1281,7 +1306,7 @@ const HostelModal = ({
                       options={wardenOptionsForEdit}
                       value={editHostelWarden === "" ? "" : editHostelWarden}
                       onChange={(v) => setEditHostelWarden(v ?? "")}
-                      placeholder={wardenStaffOptions.length ? "Select staff" : "Loading staff…"}
+                      placeholder={wardenStaffOptions.length ? "Select warden" : "No warden staff found"}
                     />
                   </div>
                 </div>

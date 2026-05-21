@@ -2,6 +2,10 @@ const { query, executeTransaction } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
 const { hasColumn, hasTable } = require('../utils/schemaInspector');
+const {
+  resolveVehicleRouteAssignmentForAllocation,
+  buildTransportAllocationVraJoin,
+} = require('../utils/transportAllocationVra');
 
 function normalizeStatus(status) {
   if (typeof status !== 'string') return 'Active';
@@ -195,7 +199,8 @@ async function enforceVehicleCapacity(client, vehicleId, startDate, endDate, exc
   const allocationResult = await client.query(
     `SELECT COUNT(*) AS occupied
      FROM transport_allocations ta
-     WHERE ta.vehicle_id = $1
+     INNER JOIN vehicle_route_assignments vra ON vra.id = ta.vehicle_route_assignment_id
+     WHERE vra.vehicle_id = $1
        AND ta.status = 'Active'
        AND (
          COALESCE(ta.end_date, 'infinity'::date) >= COALESCE($2::date, CURRENT_DATE)
@@ -241,7 +246,8 @@ async function getVehicleSeatAvailability(client, vehicleId, startDate, endDate,
   const allocationResult = await client.query(
     `SELECT COUNT(*) AS occupied
      FROM transport_allocations ta
-     WHERE ta.vehicle_id = $1
+     INNER JOIN vehicle_route_assignments vra ON vra.id = ta.vehicle_route_assignment_id
+     WHERE vra.vehicle_id = $1
        AND ta.status = 'Active'
        AND (
          COALESCE(ta.end_date, 'infinity'::date) >= COALESCE($2::date, CURRENT_DATE)
@@ -301,9 +307,11 @@ const getAllTransportAllocations = async (req, res) => {
       params.push(normalizeStatus(status));
       whereClause += ` AND ta.status = $${params.length}`;
     }
+    const vraJoin = await buildTransportAllocationVraJoin(vehicleTable);
+
     if (vehicle_id && vehicle_id !== 'all') {
       params.push(Number(vehicle_id));
-      whereClause += ` AND ta.vehicle_id = $${params.length}`;
+      whereClause += ` AND vra.vehicle_id = $${params.length}`;
     }
     if (hasAcademicYearId && scopedAcademicYearId) {
       params.push(scopedAcademicYearId);
@@ -333,7 +341,7 @@ const getAllTransportAllocations = async (req, res) => {
     const countResult = await query(
       `SELECT COUNT(*)
        FROM transport_allocations ta
-       JOIN routes r ON r.id = ta.route_id
+       ${vraJoin}
        JOIN pickup_points pp ON pp.id = ta.pickup_point_id
        LEFT JOIN LATERAL (
          SELECT TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS full_name
@@ -359,6 +367,8 @@ const getAllTransportAllocations = async (req, res) => {
     const rowsResult = await query(
       `SELECT
          ta.*,
+         vra.route_id,
+         vra.vehicle_id,
          r.route_name,
          pp.point_name,
          v.vehicle_number,
@@ -369,9 +379,8 @@ const getAllTransportAllocations = async (req, res) => {
          COALESCE(su.full_name, tu.full_name, CAST(COALESCE(${hasUserId ? 'ta.user_id' : 'ta.student_id'}, ta.staff_id) AS TEXT)) AS user_name,
          ${userTypeExpr} AS user_type
        FROM transport_allocations ta
-       JOIN routes r ON r.id = ta.route_id
+       ${vraJoin}
        JOIN pickup_points pp ON pp.id = ta.pickup_point_id
-       JOIN ${vehicleTable} v ON v.id = ta.vehicle_id
        LEFT JOIN transport_fee_master tfm ON tfm.id = ta.${feeRefColumn}
        LEFT JOIN LATERAL (
          SELECT TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS full_name
@@ -423,9 +432,8 @@ const createTransportAllocation = async (req, res) => {
       student_id,
       staff_id,
       user_type,
-      route_id,
+      vehicle_route_assignment_id,
       pickup_point_id,
-      vehicle_id,
       assigned_fee_id,
       is_free = false,
       start_date,
@@ -434,21 +442,15 @@ const createTransportAllocation = async (req, res) => {
       academic_year_id,
     } = req.body;
 
-    const parsedRouteId = Number(route_id);
     const parsedPickupPointId = Number(pickup_point_id);
-    const parsedVehicleId = Number(vehicle_id);
     const parsedAssignedFeeId = assigned_fee_id != null && assigned_fee_id !== '' ? Number(assigned_fee_id) : null;
     const normalizedUserType = String(user_type || '').toLowerCase();
 
-    if ((!user_id && !student_id && !staff_id) || !user_type || !route_id || !pickup_point_id || !vehicle_id) {
-      return errorResponse(res, 400, 'student_id/staff_id, user_type, route_id, pickup_point_id and vehicle_id are required');
+    if ((!user_id && !student_id && !staff_id) || !user_type || !pickup_point_id) {
+      return errorResponse(res, 400, 'student_id/staff_id, user_type and pickup_point_id are required');
     }
-    if (
-      !Number.isFinite(parsedRouteId) ||
-      !Number.isFinite(parsedPickupPointId) ||
-      !Number.isFinite(parsedVehicleId)
-    ) {
-      return errorResponse(res, 400, 'student_id/staff_id, route_id, pickup_point_id and vehicle_id must be valid numbers');
+    if (!Number.isFinite(parsedPickupPointId)) {
+      return errorResponse(res, 400, 'pickup_point_id must be a valid number');
     }
     if (!['student', 'staff'].includes(normalizedUserType)) {
       return errorResponse(res, 400, 'user_type must be student or staff');
@@ -469,6 +471,20 @@ const createTransportAllocation = async (req, res) => {
         staff_id,
         user_type: normalizedUserType,
       });
+
+      const resolvedRv = await resolveVehicleRouteAssignmentForAllocation(
+        client,
+        { vehicle_route_assignment_id },
+        {
+          academicYearId: scopedAcademicYearId,
+          hasAcademicYearId,
+          startDate,
+        }
+      );
+      const parsedRouteId = resolvedRv.routeId;
+      const parsedVehicleId = resolvedRv.vehicleId;
+      const parsedAssignmentId = resolvedRv.assignmentId;
+
       await validateRoutePickupMapping(client, parsedRouteId, parsedPickupPointId);
       const effectiveEndDateInput = parseIsoDateOnly(end_date, { fieldName: 'END_DATE', allowNull: true });
       if (effectiveEndDateInput && effectiveEndDateInput < startDate) {
@@ -504,9 +520,8 @@ const createTransportAllocation = async (req, res) => {
         ...(hasUserType ? ['user_type'] : []),
         ...(hasStudentId ? ['student_id'] : []),
         ...(hasStaffId ? ['staff_id'] : []),
-        'route_id',
         'pickup_point_id',
-        'vehicle_id',
+        'vehicle_route_assignment_id',
         feeRefColumn,
         amountColumn,
         'is_free',
@@ -520,9 +535,8 @@ const createTransportAllocation = async (req, res) => {
         ...(hasUserType ? [normalizedUserType] : []),
         ...(hasStudentId ? [normalizedUserType === 'student' ? subjectId : null] : []),
         ...(hasStaffId ? [normalizedUserType === 'staff' ? subjectId : null] : []),
-        parsedRouteId,
         parsedPickupPointId,
-        parsedVehicleId,
+        parsedAssignmentId,
         fee.feeId,
         fee.feeAmount,
         normalizedIsFree,
@@ -550,6 +564,21 @@ const createTransportAllocation = async (req, res) => {
     if (err.message === 'INVALID_STAFF_USER') return errorResponse(res, 400, 'Selected user is not a valid staff member');
     if (err.message === 'INVALID_USER_TYPE') return errorResponse(res, 400, 'user_type must be student or staff');
     if (err.message === 'PICKUP_NOT_IN_ROUTE') return errorResponse(res, 400, 'Selected pickup point is not mapped to selected route');
+    if (err.message === 'VEHICLE_ROUTE_ASSIGNMENT_REQUIRED') {
+      return errorResponse(res, 400, 'vehicle_route_assignment_id is required');
+    }
+    if (err.message === 'VEHICLE_ROUTE_ASSIGNMENT_NOT_FOUND') {
+      return errorResponse(res, 400, 'Selected vehicle/route assignment was not found');
+    }
+    if (err.message === 'VEHICLE_ROUTE_ASSIGNMENT_YEAR_MISMATCH') {
+      return errorResponse(res, 400, 'Assignment does not belong to the selected academic year');
+    }
+    if (err.message === 'VEHICLE_ROUTE_ASSIGNMENT_OUTSIDE_VALID_PERIOD') {
+      return errorResponse(res, 400, 'Start date is outside the assignment valid period');
+    }
+    if (err.message === 'INVALID_VEHICLE_ROUTE_ASSIGNMENT_ID') {
+      return errorResponse(res, 400, 'Invalid vehicle_route_assignment_id');
+    }
     if (err.message === 'FEE_PLAN_REQUIRED') return errorResponse(res, 400, 'assigned_fee_id is required unless is_free is true');
     if (err.message === 'FEE_PLAN_NOT_FOUND') return errorResponse(res, 400, 'Selected fee plan does not exist');
     if (err.message === 'FEE_PLAN_PICKUP_MISMATCH') return errorResponse(res, 400, 'Selected fee plan is not valid for the pickup point');
@@ -611,9 +640,8 @@ const createBulkTransportAllocations = async (req, res) => {
     const {
       user_type,
       user_ids = [],
-      route_id,
+      vehicle_route_assignment_id,
       pickup_point_id,
-      vehicle_id,
       assigned_fee_id,
       is_free = false,
       start_date,
@@ -622,17 +650,15 @@ const createBulkTransportAllocations = async (req, res) => {
       academic_year_id,
     } = req.body || {};
 
-    const parsedRouteId = Number(route_id);
     const parsedPickupPointId = Number(pickup_point_id);
-    const parsedVehicleId = Number(vehicle_id);
     const parsedAssignedFeeId = assigned_fee_id != null && assigned_fee_id !== '' ? Number(assigned_fee_id) : null;
     const normalizedUserType = String(user_type || '').toLowerCase();
 
     if (!Array.isArray(user_ids) || user_ids.length === 0) {
       return errorResponse(res, 400, 'Please select at least one user');
     }
-    if (!Number.isFinite(parsedRouteId) || !Number.isFinite(parsedPickupPointId) || !Number.isFinite(parsedVehicleId)) {
-      return errorResponse(res, 400, 'route_id, pickup_point_id and vehicle_id must be valid numbers');
+    if (!Number.isFinite(parsedPickupPointId)) {
+      return errorResponse(res, 400, 'pickup_point_id must be a valid number');
     }
     if (!['student', 'staff'].includes(normalizedUserType)) {
       return errorResponse(res, 400, 'user_type must be student or staff');
@@ -646,6 +672,19 @@ const createBulkTransportAllocations = async (req, res) => {
       const scopedAcademicYearId = hasAcademicYearId
         ? await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id)
         : null;
+
+      const resolvedRv = await resolveVehicleRouteAssignmentForAllocation(
+        client,
+        { vehicle_route_assignment_id },
+        {
+          academicYearId: scopedAcademicYearId,
+          hasAcademicYearId,
+          startDate,
+        }
+      );
+      const parsedRouteId = resolvedRv.routeId;
+      const parsedVehicleId = resolvedRv.vehicleId;
+      const parsedAssignmentId = resolvedRv.assignmentId;
 
       await validateRoutePickupMapping(client, parsedRouteId, parsedPickupPointId);
       const fee = await resolveAssignedFee(
@@ -707,9 +746,8 @@ const createBulkTransportAllocations = async (req, res) => {
           ...(hasUserType ? ['user_type'] : []),
           ...(hasStudentId ? ['student_id'] : []),
           ...(hasStaffId ? ['staff_id'] : []),
-          'route_id',
           'pickup_point_id',
-          'vehicle_id',
+          'vehicle_route_assignment_id',
           feeRefColumn,
           amountColumn,
           'is_free',
@@ -723,9 +761,8 @@ const createBulkTransportAllocations = async (req, res) => {
           ...(hasUserType ? [normalizedUserType] : []),
           ...(hasStudentId ? [normalizedUserType === 'student' ? subjectId : null] : []),
           ...(hasStaffId ? [normalizedUserType === 'staff' ? subjectId : null] : []),
-          parsedRouteId,
           parsedPickupPointId,
-          parsedVehicleId,
+          parsedAssignmentId,
           fee.feeId,
           fee.feeAmount,
           normalizedIsFree,
@@ -757,6 +794,21 @@ const createBulkTransportAllocations = async (req, res) => {
     if (err.message === 'INVALID_STAFF_USER') return errorResponse(res, 400, 'One or more selected users are not valid staff members');
     if (err.message === 'INVALID_USER_TYPE') return errorResponse(res, 400, 'user_type must be student or staff');
     if (err.message === 'PICKUP_NOT_IN_ROUTE') return errorResponse(res, 400, 'Selected pickup point is not mapped to selected route');
+    if (err.message === 'VEHICLE_ROUTE_ASSIGNMENT_REQUIRED') {
+      return errorResponse(res, 400, 'vehicle_route_assignment_id is required');
+    }
+    if (err.message === 'VEHICLE_ROUTE_ASSIGNMENT_NOT_FOUND') {
+      return errorResponse(res, 400, 'Selected vehicle/route assignment was not found');
+    }
+    if (err.message === 'VEHICLE_ROUTE_ASSIGNMENT_YEAR_MISMATCH') {
+      return errorResponse(res, 400, 'Assignment does not belong to the selected academic year');
+    }
+    if (err.message === 'VEHICLE_ROUTE_ASSIGNMENT_OUTSIDE_VALID_PERIOD') {
+      return errorResponse(res, 400, 'Start date is outside the assignment valid period');
+    }
+    if (err.message === 'INVALID_VEHICLE_ROUTE_ASSIGNMENT_ID') {
+      return errorResponse(res, 400, 'Invalid vehicle_route_assignment_id');
+    }
     if (err.message === 'FEE_PLAN_REQUIRED') return errorResponse(res, 400, 'assigned_fee_id is required unless is_free is true');
     if (err.message === 'FEE_PLAN_NOT_FOUND') return errorResponse(res, 400, 'Selected fee plan does not exist');
     if (err.message === 'FEE_PLAN_PICKUP_MISMATCH') return errorResponse(res, 400, 'Selected fee plan is not valid for the pickup point');
@@ -820,25 +872,45 @@ const updateTransportAllocation = async (req, res) => {
             : (userType === 'staff' ? (current.staff_id ?? current.user_id) : undefined),
         user_type: userType,
       });
-      const routeId = payload.route_id !== undefined ? Number(payload.route_id) : Number(current.route_id);
-      const pickupPointId = payload.pickup_point_id !== undefined ? Number(payload.pickup_point_id) : Number(current.pickup_point_id);
-      const vehicleId = payload.vehicle_id !== undefined ? Number(payload.vehicle_id) : Number(current.vehicle_id);
-      const isFree = payload.is_free !== undefined ? parseBoolean(payload.is_free, Boolean(current.is_free)) : Boolean(current.is_free);
-      const startDate = payload.start_date !== undefined
-        ? parseIsoDateOnly(payload.start_date, { fieldName: 'START_DATE', allowNull: false })
-        : parseIsoDateOnly(current.start_date, { fieldName: 'START_DATE', allowNull: false });
+      const pickupPointId =
+        payload.pickup_point_id !== undefined
+          ? Number(payload.pickup_point_id)
+          : Number(current.pickup_point_id);
+      const isFree =
+        payload.is_free !== undefined
+          ? parseBoolean(payload.is_free, Boolean(current.is_free))
+          : Boolean(current.is_free);
+      const startDate =
+        payload.start_date !== undefined
+          ? parseIsoDateOnly(payload.start_date, { fieldName: 'START_DATE', allowNull: false })
+          : parseIsoDateOnly(current.start_date, { fieldName: 'START_DATE', allowNull: false });
       const status = payload.status !== undefined ? payload.status : current.status;
       const academicYearId =
         hasAcademicYearId && payload.academic_year_id !== undefined
           ? toPositiveInt(payload.academic_year_id)
-          : (hasAcademicYearId ? toPositiveInt(current.academic_year_id) : null);
+          : hasAcademicYearId
+            ? toPositiveInt(current.academic_year_id)
+            : null;
 
-      if (
-        !Number.isFinite(userId) ||
-        !Number.isFinite(routeId) ||
-        !Number.isFinite(pickupPointId) ||
-        !Number.isFinite(vehicleId)
-      ) {
+      const resolvedRv = await resolveVehicleRouteAssignmentForAllocation(
+        client,
+        {
+          vehicle_route_assignment_id:
+            payload.vehicle_route_assignment_id !== undefined
+              ? payload.vehicle_route_assignment_id
+              : current.vehicle_route_assignment_id,
+        },
+        {
+          academicYearId,
+          hasAcademicYearId,
+          startDate,
+        }
+      );
+      const routeId = resolvedRv.routeId;
+      const vehicleId = resolvedRv.vehicleId;
+      const assignmentIdForRow = resolvedRv.assignmentId;
+
+      if (!Number.isFinite(userId) || !Number.isFinite(pickupPointId) || !Number.isFinite(assignmentIdForRow)) {
         throw new Error('INVALID_NUMERIC_INPUT');
       }
       if (!['student', 'staff'].includes(userType)) {
@@ -883,12 +955,10 @@ const updateTransportAllocation = async (req, res) => {
         updates.push(`staff_id = $${i++}`);
         values.push(userType === 'staff' ? userId : null);
       }
-      updates.push(`route_id = $${i++}`);
-      values.push(routeId);
       updates.push(`pickup_point_id = $${i++}`);
       values.push(pickupPointId);
-      updates.push(`vehicle_id = $${i++}`);
-      values.push(vehicleId);
+      updates.push(`vehicle_route_assignment_id = $${i++}`);
+      values.push(assignmentIdForRow);
       updates.push(`${feeRefColumn} = $${i++}`);
       values.push(fee.feeId);
       updates.push(`${amountColumn} = $${i++}`);
@@ -924,9 +994,24 @@ const updateTransportAllocation = async (req, res) => {
     if (err.message === 'INVALID_STUDENT_USER') return errorResponse(res, 400, 'Selected user is not a valid student');
     if (err.message === 'INVALID_STAFF_USER') return errorResponse(res, 400, 'Selected user is not a valid staff member');
     if (err.message === 'INVALID_USER_TYPE') return errorResponse(res, 400, 'user_type must be student or staff');
-    if (err.message === 'INVALID_NUMERIC_INPUT') return errorResponse(res, 400, 'student_id/staff_id, route_id, pickup_point_id and vehicle_id must be valid numbers');
+    if (err.message === 'INVALID_NUMERIC_INPUT') return errorResponse(res, 400, 'student_id/staff_id, pickup_point_id and vehicle_route_assignment_id must be valid');
     if (err.message === 'START_DATE_INVALID') return errorResponse(res, 400, 'start_date must be in YYYY-MM-DD format');
     if (err.message === 'PICKUP_NOT_IN_ROUTE') return errorResponse(res, 400, 'Selected pickup point is not mapped to selected route');
+    if (err.message === 'VEHICLE_ROUTE_ASSIGNMENT_REQUIRED') {
+      return errorResponse(res, 400, 'vehicle_route_assignment_id is required');
+    }
+    if (err.message === 'VEHICLE_ROUTE_ASSIGNMENT_NOT_FOUND') {
+      return errorResponse(res, 400, 'Selected vehicle/route assignment was not found');
+    }
+    if (err.message === 'VEHICLE_ROUTE_ASSIGNMENT_YEAR_MISMATCH') {
+      return errorResponse(res, 400, 'Assignment does not belong to the selected academic year');
+    }
+    if (err.message === 'VEHICLE_ROUTE_ASSIGNMENT_OUTSIDE_VALID_PERIOD') {
+      return errorResponse(res, 400, 'Start date is outside the assignment valid period');
+    }
+    if (err.message === 'INVALID_VEHICLE_ROUTE_ASSIGNMENT_ID') {
+      return errorResponse(res, 400, 'Invalid vehicle_route_assignment_id');
+    }
     if (err.message === 'FEE_PLAN_REQUIRED') return errorResponse(res, 400, 'assigned_fee_id is required unless is_free is true');
     if (err.message === 'FEE_PLAN_NOT_FOUND') return errorResponse(res, 400, 'Selected fee plan does not exist');
     if (err.message === 'FEE_PLAN_PICKUP_MISMATCH') return errorResponse(res, 400, 'Selected fee plan is not valid for the pickup point');

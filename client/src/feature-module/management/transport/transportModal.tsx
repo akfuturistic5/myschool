@@ -1,11 +1,14 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import { driverName, PickupPoint2, routesList, VehicleNumber } from "../../../core/common/selectoption/selectoption";
 import CommonSelect from "../../../core/common/commonSelect";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
-import dayjs from "dayjs";
-import { DatePicker } from "antd";
+import dayjs, { type Dayjs } from "dayjs";
+import customParseFormat from "dayjs/plugin/customParseFormat";
+import { DatePicker, TimePicker } from "antd";
+
+dayjs.extend(customParseFormat);
 
 import { apiService } from "../../../core/services/apiService";
 import { useSelector } from "react-redux";
@@ -32,8 +35,6 @@ interface TransportModalProps {
   setEditDriverPhone?: (value: string) => void;
   editDriverLicense?: string;
   setEditDriverLicense?: (value: string) => void;
-  editDriverAddress?: string;
-  setEditDriverAddress?: (value: string) => void;
   editDriverStatus?: boolean;
   setEditDriverStatus?: (value: boolean) => void;
   editAssignStatus?: boolean;
@@ -50,6 +51,51 @@ interface TransportModalProps {
   onSuccess?: () => void;
   deleteId?: number | string | null;
 }
+
+const parseTimeToDayjs = (value: unknown): Dayjs | null => {
+  if (value == null || value === "") return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  const parsed = dayjs(s, ["HH:mm:ss", "HH:mm", "h:mm A"], true);
+  return parsed.isValid() ? parsed : null;
+};
+
+const formatTimeForApi = (value: Dayjs | null | undefined): string | null => {
+  if (value == null || !value.isValid()) return null;
+  return value.format("HH:mm");
+};
+
+/** Calendar date only — parse YYYY-MM-DD string for DatePicker (no Date()/timezone shifts). */
+const parseDateOnlyInputToDayjs = (expRaw: unknown): Dayjs | null => {
+  if (expRaw == null || expRaw === "") return null;
+  const s = String(expRaw).trim();
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (!m) return null;
+  const d = dayjs(m[1], "YYYY-MM-DD", true);
+  return d.isValid() ? d : null;
+};
+
+const validateRouteTimeRanges = (
+  pickupStart: Dayjs | null,
+  pickupEnd: Dayjs | null,
+  dropStart: Dayjs | null,
+  dropEnd: Dayjs | null
+): string | null => {
+  const pairs: { start: Dayjs | null; end: Dayjs | null; label: string }[] = [
+    { start: pickupStart, end: pickupEnd, label: "Pickup" },
+    { start: dropStart, end: dropEnd, label: "Drop" },
+  ];
+
+  for (const { start, end, label } of pairs) {
+    if ((start && !end) || (!start && end)) {
+      return `${label} start and end time must both be set or both left empty.`;
+    }
+    if (start && end && !end.isAfter(start)) {
+      return `${label} end time must be after ${label.toLowerCase()} start time.`;
+    }
+  }
+  return null;
+};
 
 const TransportModal = ({
   selectedRoute,
@@ -71,8 +117,6 @@ const TransportModal = ({
   setEditDriverPhone,
   editDriverLicense = '',
   setEditDriverLicense,
-  editDriverAddress = '',
-  setEditDriverAddress,
   editDriverStatus = true,
   setEditDriverStatus,
   editAssignStatus = true,
@@ -93,8 +137,10 @@ const TransportModal = ({
   // State for Add/Edit Route
   const [routeName, setRouteName] = useState("");
   const [routeCode, setRouteCode] = useState("");
-  const [startPoint, setStartPoint] = useState("");
-  const [endPoint, setEndPoint] = useState("");
+  const [pickupStartTime, setPickupStartTime] = useState<Dayjs | null>(null);
+  const [pickupEndTime, setPickupEndTime] = useState<Dayjs | null>(null);
+  const [dropStartTime, setDropStartTime] = useState<Dayjs | null>(null);
+  const [dropEndTime, setDropEndTime] = useState<Dayjs | null>(null);
   const [distanceKm, setDistanceKm] = useState<string | number>("");
   const [estimatedTime, setEstimatedTime] = useState<string | number>("");
   const [routeStatus, setRouteStatus] = useState(true);
@@ -139,8 +185,10 @@ const TransportModal = ({
       const route = selectedRoute.originalData || selectedRoute;
       setRouteName(route.route_name || "");
       setRouteCode(route.route_code || "");
-      setStartPoint(route.start_time || "");
-      setEndPoint(route.end_time || "");
+      setPickupStartTime(parseTimeToDayjs(route.pickup_start_time || route.start_time));
+      setPickupEndTime(parseTimeToDayjs(route.pickup_end_time || route.end_time));
+      setDropStartTime(parseTimeToDayjs(route.drop_start_time));
+      setDropEndTime(parseTimeToDayjs(route.drop_end_time));
       setDistanceKm(route.distance_km ?? route.total_distance ?? "");
       setEstimatedTime(route.estimated_time ?? "");
       setRouteStatus(route.is_active === 1 || route.is_active === true || route.status === "Active");
@@ -159,8 +207,10 @@ const TransportModal = ({
     } else {
       setRouteName("");
       setRouteCode("");
-      setStartPoint("");
-      setEndPoint("");
+      setPickupStartTime(null);
+      setPickupEndTime(null);
+      setDropStartTime(null);
+      setDropEndTime(null);
       setDistanceKm("");
       setEstimatedTime("");
       setRouteStatus(true);
@@ -220,20 +270,71 @@ const TransportModal = ({
     });
   };
 
+  const getRouteModalContainer = (modalId: string) => {
+    const modalElement = document.getElementById(modalId);
+    return modalElement ?? document.body;
+  };
+
+  const renderRouteTimePicker = (
+    label: string,
+    value: Dayjs | null,
+    onChange: (next: Dayjs | null) => void,
+    modalId: string
+  ) => (
+    <div className="mb-3">
+      <label className="form-label">{label}</label>
+      <div className="date-pic">
+        <TimePicker
+          getPopupContainer={() => getRouteModalContainer(modalId)}
+          format="HH:mm"
+          className="form-control timepicker w-100"
+          placeholder="HH:mm"
+          value={value}
+          onChange={onChange}
+          needConfirm={false}
+          allowClear
+        />
+        <span className="cal-icon">
+          <i className="ti ti-clock" />
+        </span>
+      </div>
+    </div>
+  );
+
   const handleAddRoute = async (e: any) => {
     e.preventDefault();
     setLoading(true);
     try {
+      const timeError = validateRouteTimeRanges(
+        pickupStartTime,
+        pickupEndTime,
+        dropStartTime,
+        dropEndTime
+      );
+      if (timeError) {
+        Swal.fire({ icon: "warning", title: "Validation Error", text: timeError });
+        setLoading(false);
+        return;
+      }
+
       const payload = {
         route_name: routeName.trim(),
         route_code: routeCode.trim() || null,
-        start_time: startPoint.trim() || null,
-        end_time: endPoint.trim() || null,
+        pickup_start_time: formatTimeForApi(pickupStartTime),
+        pickup_end_time: formatTimeForApi(pickupEndTime),
+        drop_start_time: formatTimeForApi(dropStartTime),
+        drop_end_time: formatTimeForApi(dropEndTime),
         distance_km: distanceKm === '' ? null : Number(distanceKm),
         total_distance: distanceKm === '' ? null : Number(distanceKm),
         estimated_time: estimatedTime === '' ? null : Number(estimatedTime),
         is_active: !!routeStatus,
-        stops: stops.filter(s => s.pickup_point_id) // Only send stops with a selected point
+        stops: stops
+          .filter((s) => s.pickup_point_id)
+          .map((s) => ({
+            ...s,
+            pickup_time: s.pickup_time ? String(s.pickup_time).trim() || null : null,
+            drop_time: s.drop_time ? String(s.drop_time).trim() || null : null,
+          })),
       };
 
       let res;
@@ -442,9 +543,40 @@ const TransportModal = ({
   const [driverNameInput, setDriverNameInput] = useState("");
   const [driverPhone, setDriverPhone] = useState("");
   const [driverLicense, setDriverLicense] = useState("");
+  const [driverLicenseExpiry, setDriverLicenseExpiry] = useState<Dayjs | null>(null);
+  const [driverLicensePhotoUrl, setDriverLicensePhotoUrl] = useState("");
+  const [driverLicensePhotoFile, setDriverLicensePhotoFile] =
+    useState<File | null>(null);
+  const [driverLicensePhotoPreview, setDriverLicensePhotoPreview] =
+    useState("");
+  const licensePhotoInputRef = useRef<HTMLInputElement | null>(null);
   const [driverRole, setDriverRole] = useState("driver");
-  const [driverAddressInput, setDriverAddressInput] = useState("");
   const [driverStatus, setDriverStatus] = useState(true);
+
+  useEffect(() => {
+    let revoked: string | null = null;
+    if (driverLicensePhotoFile) {
+      const u = URL.createObjectURL(driverLicensePhotoFile);
+      revoked = u;
+      setDriverLicensePhotoPreview(u);
+      return () => {
+        URL.revokeObjectURL(u);
+      };
+    }
+    let cancelled = false;
+    (async () => {
+      if (!driverLicensePhotoUrl?.trim()) {
+        if (!cancelled) setDriverLicensePhotoPreview("");
+        return;
+      }
+      const abs = await apiService.resolveAvatarUrl(driverLicensePhotoUrl.trim());
+      if (!cancelled) setDriverLicensePhotoPreview(abs || "");
+    })();
+    return () => {
+      cancelled = true;
+      if (revoked) URL.revokeObjectURL(revoked);
+    };
+  }, [driverLicensePhotoFile, driverLicensePhotoUrl]);
 
   useEffect(() => {
     if (selectedDriver) {
@@ -452,18 +584,41 @@ const TransportModal = ({
       setDriverNameInput(d.name || d.driver_name || "");
       setDriverPhone(d.phone || d.driver_phone || "");
       setDriverLicense(d.license_number || d.driverLicenseNo || "");
-      setDriverRole((d.role || "driver").toLowerCase());
-      setDriverAddressInput(d.address || "");
-      setDriverStatus(d.is_active === 1 || d.is_active === true || d.status === "Active");
+      const expRaw = d.license_expiry || d.licenseExpiry;
+      setDriverLicenseExpiry(parseDateOnlyInputToDayjs(expRaw));
+      setDriverLicensePhotoUrl(
+        d.license_photo_url || d.licensePhotoUrl || ""
+      );
+      setDriverLicensePhotoFile(null);
+      if (licensePhotoInputRef.current) licensePhotoInputRef.current.value = "";
+      setDriverRole(String(d.role || "driver").toLowerCase());
+      setDriverStatus(
+        d.is_active === 1 || d.is_active === true || d.status === "Active"
+      );
     } else {
       setDriverNameInput("");
       setDriverPhone("");
       setDriverLicense("");
+      setDriverLicenseExpiry(null);
+      setDriverLicensePhotoUrl("");
+      setDriverLicensePhotoFile(null);
+      if (licensePhotoInputRef.current) licensePhotoInputRef.current.value = "";
       setDriverRole("driver");
-      setDriverAddressInput("");
       setDriverStatus(true);
     }
   }, [selectedDriver]);
+
+  const onDriverRoleChange = (v: string | null) => {
+    const next = v || "driver";
+    setDriverRole(next);
+    if (next === "conductor") {
+      setDriverLicense("");
+      setDriverLicenseExpiry(null);
+      setDriverLicensePhotoUrl("");
+      setDriverLicensePhotoFile(null);
+      if (licensePhotoInputRef.current) licensePhotoInputRef.current.value = "";
+    }
+  };
 
   const handleAddDriver = async (e: any) => {
     e.preventDefault();
@@ -489,22 +644,57 @@ const TransportModal = ({
         setLoading(false);
         return;
       }
+      if (driverRole === "driver" && (!driverLicenseExpiry || !driverLicenseExpiry.isValid())) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Validation Error',
+          text: 'License expiry date is required for driver role'
+        });
+        setLoading(false);
+        return;
+      }
+
+      let photoUrl = driverLicensePhotoUrl.trim();
+      if (driverRole === "driver" && driverLicensePhotoFile) {
+        const uploadResponse = await apiService.uploadTransportLicensePhoto(driverLicensePhotoFile);
+        const uploadedUrl = uploadResponse?.data?.url;
+        if (uploadResponse?.status !== 'SUCCESS' || typeof uploadedUrl !== 'string' || !uploadedUrl.trim()) {
+          throw new Error(
+            typeof uploadResponse?.message === 'string' && uploadResponse.message.trim()
+              ? uploadResponse.message
+              : 'Failed to upload license photo'
+          );
+        }
+        photoUrl = uploadedUrl.trim();
+        setDriverLicensePhotoUrl(photoUrl);
+        setDriverLicensePhotoFile(null);
+        if (licensePhotoInputRef.current) licensePhotoInputRef.current.value = "";
+      }
+
+      if (driverRole === "driver" && !photoUrl) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Validation Error',
+          text: 'License photo is required for driver role (upload an image or PDF)'
+        });
+        setLoading(false);
+        return;
+      }
 
       const payload = {
-        name: driverNameInput,
-        phone: phoneDigits, // Send clean 10-digit phone
+        name: driverNameInput.trim(),
+        phone: phoneDigits,
         role: driverRole,
-        license_number: driverRole === "conductor" ? null : driverLicense,
-        address: driverAddressInput,
-        is_active: !!driverStatus
+        license_number: driverRole === "conductor" ? null : driverLicense.trim(),
+        license_expiry:
+          driverRole === "driver" ? driverLicenseExpiry!.format("YYYY-MM-DD") : null,
+        license_photo_url: driverRole === "conductor" ? null : photoUrl,
+        is_active: !!driverStatus,
       };
 
       let res;
-      // More robust updateId detection
-      const updateId = selectedDriver?.originalData?.id || 
+      const updateId = selectedDriver?.originalData?.id ||
                        (selectedDriver?.id && !isNaN(Number(selectedDriver.id)) ? Number(selectedDriver.id) : null);
-      
-      console.log('Driver operation:', { isUpdate: !!updateId, updateId, payload });
 
       if (updateId) {
         res = await apiService.updateTransportDriver(updateId, payload);
@@ -516,7 +706,7 @@ const TransportModal = ({
         Swal.fire({
           icon: 'success',
           title: 'Success',
-          text: updateId ? 'Driver updated successfully' : 'Driver added successfully',
+          text: updateId ? 'Transport staff updated successfully' : 'Transport staff added successfully',
           timer: 1500,
           showConfirmButton: false
         });
@@ -807,28 +997,76 @@ const TransportModal = ({
                       <div className="row">
                         <div className="col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Start Time</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              placeholder="Enter Start Time"
-                              value={startPoint}
-                              onChange={(e) => setStartPoint(e.target.value)}
-                              maxLength={200}
-                            />
+                            <label className="form-label">Pickup Start Time</label>
+                            <div className="date-pic">
+                              <TimePicker
+                                getPopupContainer={() => getRouteModalContainer("add_routes")}
+                                format="HH:mm"
+                                className="form-control timepicker w-100"
+                                placeholder="HH:mm"
+                                value={pickupStartTime}
+                                onChange={setPickupStartTime}
+                                needConfirm={false}
+                                allowClear
+                              />
+                              <span className="cal-icon"><i className="ti ti-clock" /></span>
+                            </div>
                           </div>
                         </div>
                         <div className="col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">End Time</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              placeholder="Enter End Time"
-                              value={endPoint}
-                              onChange={(e) => setEndPoint(e.target.value)}
-                              maxLength={200}
-                            />
+                            <label className="form-label">Pickup End Time</label>
+                            <div className="date-pic">
+                              <TimePicker
+                                getPopupContainer={() => getRouteModalContainer("add_routes")}
+                                format="HH:mm"
+                                className="form-control timepicker w-100"
+                                placeholder="HH:mm"
+                                value={pickupEndTime}
+                                onChange={setPickupEndTime}
+                                needConfirm={false}
+                                allowClear
+                              />
+                              <span className="cal-icon"><i className="ti ti-clock" /></span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="row">
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Drop Start Time</label>
+                            <div className="date-pic">
+                              <TimePicker
+                                getPopupContainer={() => getRouteModalContainer("add_routes")}
+                                format="HH:mm"
+                                className="form-control timepicker w-100"
+                                placeholder="HH:mm"
+                                value={dropStartTime}
+                                onChange={setDropStartTime}
+                                needConfirm={false}
+                                allowClear
+                              />
+                              <span className="cal-icon"><i className="ti ti-clock" /></span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Drop End Time</label>
+                            <div className="date-pic">
+                              <TimePicker
+                                getPopupContainer={() => getRouteModalContainer("add_routes")}
+                                format="HH:mm"
+                                className="form-control timepicker w-100"
+                                placeholder="HH:mm"
+                                value={dropEndTime}
+                                onChange={setDropEndTime}
+                                needConfirm={false}
+                                allowClear
+                              />
+                              <span className="cal-icon"><i className="ti ti-clock" /></span>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -885,19 +1123,27 @@ const TransportModal = ({
                                     />
                                   </td>
                                   <td>
-                                    <input
-                                      type="time"
-                                      className="form-control form-control-sm"
-                                      value={stop.pickup_time}
-                                      onChange={(e) => handleStopChange(index, 'pickup_time', e.target.value)}
+                                    <TimePicker
+                                      getPopupContainer={() => getRouteModalContainer("add_routes")}
+                                      format="HH:mm"
+                                      className="form-control timepicker form-control-sm w-100"
+                                      placeholder="HH:mm"
+                                      value={parseTimeToDayjs(stop.pickup_time)}
+                                      onChange={(t) => handleStopChange(index, 'pickup_time', t ? t.format("HH:mm") : "")}
+                                      needConfirm={false}
+                                      allowClear
                                     />
                                   </td>
                                   <td>
-                                    <input
-                                      type="time"
-                                      className="form-control form-control-sm"
-                                      value={stop.drop_time}
-                                      onChange={(e) => handleStopChange(index, 'drop_time', e.target.value)}
+                                    <TimePicker
+                                      getPopupContainer={() => getRouteModalContainer("add_routes")}
+                                      format="HH:mm"
+                                      className="form-control timepicker form-control-sm w-100"
+                                      placeholder="HH:mm"
+                                      value={parseTimeToDayjs(stop.drop_time)}
+                                      onChange={(t) => handleStopChange(index, 'drop_time', t ? t.format("HH:mm") : "")}
+                                      needConfirm={false}
+                                      allowClear
                                     />
                                   </td>
                                   <td className="text-center">
@@ -997,29 +1243,47 @@ const TransportModal = ({
                       <div className="row">
                         <div className="col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Start Time</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              placeholder="Enter Start Time"
-                              value={startPoint}
-                              onChange={(e) => setStartPoint(e.target.value)}
-                              maxLength={200}
-                            />
+                            <label className="form-label">Pickup Start Time</label>
+                            <div className="date-pic">
+                              <TimePicker
+                                getPopupContainer={() => getRouteModalContainer("edit_routes")}
+                                format="HH:mm"
+                                className="form-control timepicker w-100"
+                                placeholder="HH:mm"
+                                value={pickupStartTime}
+                                onChange={setPickupStartTime}
+                                needConfirm={false}
+                                allowClear
+                              />
+                              <span className="cal-icon"><i className="ti ti-clock" /></span>
+                            </div>
                           </div>
                         </div>
                         <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">End Time</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              placeholder="Enter End Time"
-                              value={endPoint}
-                              onChange={(e) => setEndPoint(e.target.value)}
-                              maxLength={200}
-                            />
-                          </div>
+                          {renderRouteTimePicker(
+                            "Pickup End Time",
+                            pickupEndTime,
+                            setPickupEndTime,
+                            "edit_routes"
+                          )}
+                        </div>
+                      </div>
+                      <div className="row">
+                        <div className="col-md-6">
+                          {renderRouteTimePicker(
+                            "Drop Start Time",
+                            dropStartTime,
+                            setDropStartTime,
+                            "edit_routes"
+                          )}
+                        </div>
+                        <div className="col-md-6">
+                          {renderRouteTimePicker(
+                            "Drop End Time",
+                            dropEndTime,
+                            setDropEndTime,
+                            "edit_routes"
+                          )}
                         </div>
                       </div>
                       <div className="mb-3">
@@ -1052,19 +1316,27 @@ const TransportModal = ({
                                     />
                                   </td>
                                   <td>
-                                    <input
-                                      type="time"
-                                      className="form-control form-control-sm"
-                                      value={stop.pickup_time}
-                                      onChange={(e) => handleStopChange(index, 'pickup_time', e.target.value)}
+                                    <TimePicker
+                                      getPopupContainer={() => getRouteModalContainer("edit_routes")}
+                                      format="HH:mm"
+                                      className="form-control timepicker form-control-sm w-100"
+                                      placeholder="HH:mm"
+                                      value={parseTimeToDayjs(stop.pickup_time)}
+                                      onChange={(t) => handleStopChange(index, 'pickup_time', t ? t.format("HH:mm") : "")}
+                                      needConfirm={false}
+                                      allowClear
                                     />
                                   </td>
                                   <td>
-                                    <input
-                                      type="time"
-                                      className="form-control form-control-sm"
-                                      value={stop.drop_time}
-                                      onChange={(e) => handleStopChange(index, 'drop_time', e.target.value)}
+                                    <TimePicker
+                                      getPopupContainer={() => getRouteModalContainer("edit_routes")}
+                                      format="HH:mm"
+                                      className="form-control timepicker form-control-sm w-100"
+                                      placeholder="HH:mm"
+                                      value={parseTimeToDayjs(stop.drop_time)}
+                                      onChange={(t) => handleStopChange(index, 'drop_time', t ? t.format("HH:mm") : "")}
+                                      needConfirm={false}
+                                      allowClear
                                     />
                                   </td>
                                   <td className="text-center">
@@ -1556,7 +1828,7 @@ const TransportModal = ({
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
               <div className="modal-header">
-                <h4 className="modal-title">Add New Driver</h4>
+                <h4 className="modal-title">Add Transport Staff</h4>
                 <button
                   type="button"
                   className="btn-close custom-btn-close"
@@ -1601,7 +1873,7 @@ const TransportModal = ({
                             { value: "conductor", label: "Conductor" }
                           ]}
                           value={driverRole}
-                          onChange={(v: string | null) => setDriverRole(v || "driver")}
+                          onChange={onDriverRoleChange}
                         />
                       </div>
                       {driverRole === "driver" && (
@@ -1617,16 +1889,58 @@ const TransportModal = ({
                         />
                       </div>
                       )}
+                      {driverRole === "driver" && (
+                      <>
                       <div className="mb-3">
-                        <label className="form-label">Address</label>
-                        <textarea
+                        <label className="form-label">License expiry</label>
+                        <DatePicker
                           className="form-control"
-                          rows={3}
-                          placeholder="Enter Address"
-                          value={driverAddressInput}
-                          onChange={(e) => setDriverAddressInput(e.target.value)}
-                        ></textarea>
+                          style={{ width: "100%", height: "42px" }}
+                          format="YYYY-MM-DD"
+                          value={driverLicenseExpiry}
+                          onChange={(d) => setDriverLicenseExpiry(d)}
+                          placeholder="Select expiry date"
+                        />
                       </div>
+                      <div className="mb-3">
+                        <label className="form-label">License photo</label>
+                        <input
+                          ref={licensePhotoInputRef}
+                          type="file"
+                          className="form-control"
+                          accept=".jpg,.jpeg,.png,.webp,.gif,.pdf"
+                          onChange={(e) =>
+                            setDriverLicensePhotoFile(e.target.files?.[0] || null)
+                          }
+                        />
+                        <small className="text-muted d-block mt-1">
+                          Image or PDF. Required for drivers; stored in school storage.
+                        </small>
+                        {driverLicensePhotoPreview && (
+                          <div className="mt-2">
+                            {driverLicensePhotoFile?.type === "application/pdf" ||
+                            /\.pdf(\?|$)/i.test(String(driverLicensePhotoUrl)) ? (
+                              <a
+                                href={driverLicensePhotoPreview}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn btn-sm btn-outline-primary"
+                              >
+                                View license file
+                              </a>
+                            ) : (
+                              <img
+                                src={driverLicensePhotoPreview}
+                                alt="License"
+                                className="img-thumbnail mt-1"
+                                style={{ maxHeight: 120 }}
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      </>
+                      )}
                     </div>
                     <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-1 mx-2">
                       <div className="status-title">
@@ -1660,7 +1974,7 @@ const TransportModal = ({
                     className="btn btn-primary"
                     disabled={loading}
                   >
-                    {loading ? "Adding..." : "Add Driver"}
+                    {loading ? "Adding..." : "Add Staff"}
                   </button>
                 </div>
               </form>
@@ -1672,7 +1986,7 @@ const TransportModal = ({
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
               <div className="modal-header">
-                <h4 className="modal-title">Edit Driver</h4>
+                <h4 className="modal-title">Edit Transport Staff</h4>
                 <button
                   type="button"
                   className="btn-close custom-btn-close"
@@ -1717,7 +2031,7 @@ const TransportModal = ({
                             { value: "conductor", label: "Conductor" }
                           ]}
                           value={driverRole}
-                          onChange={(v: string | null) => setDriverRole(v || "driver")}
+                          onChange={onDriverRoleChange}
                         />
                       </div>
                       {driverRole === "driver" && (
@@ -1733,16 +2047,58 @@ const TransportModal = ({
                         />
                       </div>
                       )}
+                      {driverRole === "driver" && (
+                      <>
                       <div className="mb-3">
-                        <label className="form-label">Address</label>
-                        <textarea
+                        <label className="form-label">License expiry</label>
+                        <DatePicker
                           className="form-control"
-                          rows={3}
-                          placeholder="Enter Address"
-                          value={driverAddressInput}
-                          onChange={(e) => setDriverAddressInput(e.target.value)}
-                        ></textarea>
+                          style={{ width: "100%", height: "42px" }}
+                          format="YYYY-MM-DD"
+                          value={driverLicenseExpiry}
+                          onChange={(d) => setDriverLicenseExpiry(d)}
+                          placeholder="Select expiry date"
+                        />
                       </div>
+                      <div className="mb-3">
+                        <label className="form-label">License photo</label>
+                        <input
+                          ref={licensePhotoInputRef}
+                          type="file"
+                          className="form-control"
+                          accept=".jpg,.jpeg,.png,.webp,.gif,.pdf"
+                          onChange={(e) =>
+                            setDriverLicensePhotoFile(e.target.files?.[0] || null)
+                          }
+                        />
+                        <small className="text-muted d-block mt-1">
+                          Image or PDF. Required for drivers; stored in school storage.
+                        </small>
+                        {driverLicensePhotoPreview && (
+                          <div className="mt-2">
+                            {driverLicensePhotoFile?.type === "application/pdf" ||
+                            /\.pdf(\?|$)/i.test(String(driverLicensePhotoUrl)) ? (
+                              <a
+                                href={driverLicensePhotoPreview}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn btn-sm btn-outline-primary"
+                              >
+                                View license file
+                              </a>
+                            ) : (
+                              <img
+                                src={driverLicensePhotoPreview}
+                                alt="License"
+                                className="img-thumbnail mt-1"
+                                style={{ maxHeight: 120 }}
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      </>
+                      )}
                     </div>
                     <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-1 mx-2">
                       <div className="status-title">
