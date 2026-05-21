@@ -160,6 +160,7 @@ function mapScheduleRow(row, classMap, sectionMap, subjectMap, timeSlotMap, teac
     section: sec ? (sec.section_name ?? sec.name) : null,
     teacher: teacherName,
     subject: subjectDisplayFromSubjectRow(subj),
+    subjectType: subj ? (subj.subject_type ?? subj.subject_mode ?? null) : null,
     day: getDayName(row),
     startTime: slot ? formatTime(getSlotStart(slot)) : formatTime(row.start_time),
     endTime: slot ? formatTime(getSlotEnd(slot)) : formatTime(row.end_time),

@@ -13,10 +13,31 @@ import { apiService } from "../../../../core/services/apiService";
 import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
 import { parseFetchErrorMessage } from "../../../../core/utils/parseFetchErrorMessage";
 
+const toYmd = (dateStr: any) => {
+  if (!dateStr) return "";
+  try {
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return "";
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  } catch {
+    return "";
+  }
+};
+
 const ApproveRequest = () => {
   const routes = all_routes;
   const [leaveActionId, setLeaveActionId] = useState<number | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ type: "success" | "danger"; text: string } | null>(null);
+  const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
+  const [actionType, setActionType] = useState<"view" | "approve" | "reject">("view");
+  const [approvedStartDate, setApprovedStartDate] = useState<string>("");
+  const [approvedEndDate, setApprovedEndDate] = useState<string>("");
+  const [rejectionInput, setRejectionInput] = useState<string>("");
+  const [modalFeedback, setModalFeedback] = useState<{ type: "success" | "danger"; text: string } | null>(null);
+
   const { user: currentUser } = useCurrentUser() as any;
   const roleName = String(currentUser?.role_name || currentUser?.role || "").toLowerCase();
   const roleId = Number(currentUser?.user_role_id);
@@ -45,68 +66,83 @@ const ApproveRequest = () => {
       noofDays: row.noOfDays ?? "—",
       appliedOn: row.appliedOn ?? "—",
       status: row.status ?? "Pending",
+      description: row.description ?? "",
+      document_url: row.document_url ?? null,
+      photoUrl: row.photoUrl ?? "",
+      startDate: row.startDate,
+      endDate: row.endDate,
     }));
   }, [leaveApplications]);
 
-  const handleApprove = async (id: number, record?: any) => {
-    if (leaveActionId != null) return;
-    const originalDays = record?.noofDays ? parseInt(String(record.noofDays), 10) : 0;
-    let approvedDays: number | null = null;
-    
-    if (originalDays > 1) {
-      const input = window.prompt(`Approve how many days out of ${originalDays}? (Leave blank or enter ${originalDays} to approve fully)`, String(originalDays));
-      if (input === null) return; // User cancelled
-      const trimmed = input.trim();
-      if (trimmed !== "") {
-        const parsed = parseInt(trimmed, 10);
-        if (Number.isNaN(parsed) || parsed <= 0 || parsed > originalDays) {
-          alert(`Invalid number of days. Must be between 1 and ${originalDays}.`);
-          return;
-        }
-        approvedDays = parsed;
-      }
-    }
-    
-    setLeaveActionId(id);
-    setActionFeedback(null);
-    try {
-      const options: any = {};
-      if (approvedDays !== null) {
-        options.total_days = approvedDays;
-      }
-      const res = await apiService.updateLeaveApplicationStatus(id, "approved", options);
-      if (res?.status === "SUCCESS") {
-        setActionFeedback({ type: "success", text: approvedDays !== null ? `Leave approved for ${approvedDays} days.` : "Leave approved." });
-        await refetchLeaves();
-      } else {
-        setActionFeedback({ type: "danger", text: res?.message || "Could not approve leave." });
-      }
-    } catch (e: unknown) {
-      setActionFeedback({ type: "danger", text: parseFetchErrorMessage(e) });
-    } finally {
-      setLeaveActionId(null);
-    }
+  const handleOpenAction = (record: any, type: "view" | "approve" | "reject") => {
+    setSelectedRecord(record);
+    setActionType(type);
+    setApprovedStartDate(toYmd(record.startDate));
+    setApprovedEndDate(toYmd(record.endDate));
+    setRejectionInput("");
+    setModalFeedback(null);
   };
 
-  const handleReject = async (id: number) => {
-    if (leaveActionId != null) return;
-    setLeaveActionId(id);
+  const handleModalSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedRecord || leaveActionId != null) return;
+
+    setLeaveActionId(selectedRecord.id);
+    setModalFeedback(null);
     setActionFeedback(null);
+
     try {
-      const reason = window.prompt("Enter rejection reason");
-      if (!reason || !reason.trim()) {
-        setLeaveActionId(null);
-        return;
-      }
-      const res = await apiService.updateLeaveApplicationStatus(id, "rejected", { rejection_reason: reason.trim() });
-      if (res?.status === "SUCCESS") {
-        setActionFeedback({ type: "success", text: "Leave rejected." });
-        await refetchLeaves();
-      } else {
-        setActionFeedback({ type: "danger", text: res?.message || "Could not reject leave." });
+      const id = selectedRecord.id;
+      if (actionType === "approve") {
+        if (!approvedStartDate || !approvedEndDate) {
+          setModalFeedback({ type: "danger", text: "Approved start and end dates are required." });
+          setLeaveActionId(null);
+          return;
+        }
+        const start = new Date(approvedStartDate);
+        const end = new Date(approvedEndDate);
+        if (end < start) {
+          setModalFeedback({ type: "danger", text: "End date cannot be earlier than start date." });
+          setLeaveActionId(null);
+          return;
+        }
+
+        const totalDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1);
+
+        const options: any = {
+          start_date: approvedStartDate,
+          end_date: approvedEndDate,
+          total_days: totalDays
+        };
+        const res = await apiService.updateLeaveApplicationStatus(id, "approved", options);
+        if (res?.status === "SUCCESS") {
+          setActionFeedback({
+            type: "success",
+            text: `Leave approved for ${totalDays} days (${approvedStartDate} to ${approvedEndDate}).`
+          });
+          setSelectedRecord(null);
+          await refetchLeaves();
+        } else {
+          setModalFeedback({ type: "danger", text: res?.message || "Could not approve leave." });
+        }
+      } else if (actionType === "reject") {
+        const reason = rejectionInput.trim();
+        if (!reason) {
+          setModalFeedback({ type: "danger", text: "Rejection reason is required." });
+          setLeaveActionId(null);
+          return;
+        }
+        const res = await apiService.updateLeaveApplicationStatus(id, "rejected", { rejection_reason: reason });
+        if (res?.status === "SUCCESS") {
+          setActionFeedback({ type: "success", text: "Leave rejected successfully." });
+          setSelectedRecord(null);
+          await refetchLeaves();
+        } else {
+          setModalFeedback({ type: "danger", text: res?.message || "Could not reject leave." });
+        }
       }
     } catch (e: unknown) {
-      setActionFeedback({ type: "danger", text: parseFetchErrorMessage(e) });
+      setModalFeedback({ type: "danger", text: parseFetchErrorMessage(e) });
     } finally {
       setLeaveActionId(null);
     }
@@ -184,11 +220,20 @@ const ApproveRequest = () => {
         const disabled = leaveActionId != null || isApproved || isRejected;
         if (id == null) return null;
         return (
-          <div className="d-flex gap-1">
+          <div className="d-flex gap-1 align-items-center">
+            <button
+              type="button"
+              className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1"
+              onClick={() => handleOpenAction(record, "view")}
+              disabled={disabled}
+            >
+              <i className="ti ti-eye fs-14" />
+              Review
+            </button>
             <button
               type="button"
               className="avatar avatar-xs p-0 btn btn-success"
-              onClick={() => handleApprove(Number(id), record)}
+              onClick={() => handleOpenAction(record, "approve")}
               disabled={disabled}
               title="Approve"
             >
@@ -197,7 +242,7 @@ const ApproveRequest = () => {
             <button
               type="button"
               className="avatar avatar-xs p-0 btn btn-danger"
-              onClick={() => handleReject(Number(id))}
+              onClick={() => handleOpenAction(record, "reject")}
               disabled={disabled}
               title="Reject"
             >
@@ -462,110 +507,217 @@ const ApproveRequest = () => {
           </div>
         </div>
         {/* /Page Wrapper */}
-        {/* Leave Request */}
-        <div className="modal fade" id="leave_request">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h4 className="modal-title">Leave Request</h4>
-                <button
-                  type="button"
-                  className="btn-close custom-btn-close"
-                  data-bs-dismiss="modal"
-                  aria-label="Close"
-                >
-                  <i className="ti ti-x" />
-                </button>
-              </div>
-              <form >
-                <div className="modal-body">
-                  <div className="student-leave-info">
-                    <ul>
-                      <li>
-                        <span>Submitted By</span>
-                        <h6>James Deckar</h6>
-                      </li>
-                      <li>
-                        <span>ID / Roll No</span>
-                        <h6>9004</h6>
-                      </li>
-                      <li>
-                        <span>Role</span>
-                        <h6>Student</h6>
-                      </li>
-                      <li>
-                        <span>Leave Type</span>
-                        <h6>Medical Leave</h6>
-                      </li>
-                      <li>
-                        <span>No of Days</span>
-                        <h6>2</h6>
-                      </li>
-                      <li>
-                        <span>Applied On</span>
-                        <h6>04 May 2024</h6>
-                      </li>
-                      <li>
-                        <span>Authoity</span>
-                        <h6>Jacquelin</h6>
-                      </li>
-                      <li>
-                        <span>Leave</span>
-                        <h6>05 May 2024 - 07 may 2024</h6>
-                      </li>
-                    </ul>
+        {/* Leave Request Modal */}
+        {selectedRecord && (
+          <>
+            <div
+              className="modal fade show animate__animated animate__fadeIn animate__faster"
+              style={{ display: "block", backgroundColor: "rgba(0, 0, 0, 0.5)", zIndex: 1050 }}
+            >
+              <div className="modal-dialog modal-dialog-centered modal-lg">
+                <div className="modal-content border-0 shadow-lg" style={{ borderRadius: "12px" }}>
+                  <div className="modal-header bg-light border-bottom-0 pb-0 pt-3 px-4">
+                    <h4 className="modal-title d-flex align-items-center gap-2 text-primary fw-bold">
+                      <i className="ti ti-file-text fs-22" />
+                      Leave Request Details
+                    </h4>
+                    <button
+                      type="button"
+                      className="btn-close custom-btn-close border-0 bg-transparent"
+                      aria-label="Close"
+                      onClick={() => setSelectedRecord(null)}
+                    >
+                      <i className="ti ti-x fs-18 text-muted" />
+                    </button>
                   </div>
-                  <div className="mb-3 leave-reason">
-                    <h6 className="mb-1">Reason</h6>
-                    <span>Headache &amp; fever</span>
-                  </div>
-                  <div className="mb-3">
-                    <label className="form-label">Approval Status</label>
-                    <div className="d-flex align-items-center check-radio-group">
-                      <label className="custom-radio">
-                        <input type="radio" name="radio" checked />
-                        <span className="checkmark" />
-                        Pending
-                      </label>
-                      <label className="custom-radio">
-                        <input type="radio" name="radio" />
-                        <span className="checkmark" />
-                        Approved
-                      </label>
-                      <label className="custom-radio">
-                        <input type="radio" name="radio" />
-                        <span className="checkmark" />
-                        Disapproved
-                      </label>
+                  <form onSubmit={handleModalSubmit}>
+                    <div className="modal-body px-4 py-3">
+                      {modalFeedback && (
+                        <div
+                          className={`alert alert-${modalFeedback.type === "success" ? "success" : "danger"} d-flex justify-content-between align-items-start gap-2 mb-3`}
+                          role="alert"
+                        >
+                          <span className="small mb-0">{modalFeedback.text}</span>
+                          <button
+                            type="button"
+                            className="btn-close"
+                            aria-label="Dismiss"
+                            onClick={() => setModalFeedback(null)}
+                          />
+                        </div>
+                      )}
+                      
+                      {/* Detailed Grid Info */}
+                      <div className="student-leave-info p-3 mb-3 bg-light rounded" style={{ border: "1px solid #eaeaea" }}>
+                        <div className="row g-3">
+                          <div className="col-sm-6 col-md-4">
+                            <span className="text-muted d-block small">Submitted By</span>
+                            <h6 className="mb-0 text-dark fw-semibold">{selectedRecord.submittedBy}</h6>
+                          </div>
+                          <div className="col-sm-6 col-md-4">
+                            <span className="text-muted d-block small">Role</span>
+                            <h6 className="mb-0 text-dark fw-semibold">{selectedRecord.role}</h6>
+                          </div>
+                          <div className="col-sm-6 col-md-4">
+                            <span className="text-muted d-block small">Leave Type</span>
+                            <h6 className="mb-0 text-dark fw-semibold">{selectedRecord.leaveType}</h6>
+                          </div>
+                          <div className="col-sm-6 col-md-4">
+                            <span className="text-muted d-block small">Leave Dates</span>
+                            <h6 className="mb-0 text-dark fw-semibold">{selectedRecord.leaveDate}</h6>
+                          </div>
+                          <div className="col-sm-6 col-md-4">
+                            <span className="text-muted d-block small">Number of Days</span>
+                            <h6 className="mb-0 text-dark fw-semibold">{selectedRecord.noofDays}</h6>
+                          </div>
+                          <div className="col-sm-6 col-md-4">
+                            <span className="text-muted d-block small">Applied On</span>
+                            <h6 className="mb-0 text-dark fw-semibold">{selectedRecord.appliedOn}</h6>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Reason Description */}
+                      <div className="mb-3 p-3 bg-light rounded" style={{ border: "1px solid #eaeaea" }}>
+                        <span className="text-muted d-block small mb-1">Reason / Description</span>
+                        <p className="mb-0 text-dark small" style={{ whiteSpace: "pre-wrap" }}>
+                          {selectedRecord.description || "No description provided."}
+                        </p>
+                      </div>
+
+                      {/* Attachment URL (PDF / Image) */}
+                      {selectedRecord.document_url && (
+                        <div className="mb-3 d-flex align-items-center gap-2">
+                          <i className="ti ti-paperclip text-primary fs-18" />
+                          <span className="text-muted small">Attachment:</span>
+                          <a
+                            href={selectedRecord.document_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-link btn-sm p-0 d-inline-flex align-items-center gap-1 fw-medium text-decoration-none"
+                          >
+                            View Document / Receipt
+                            <i className="ti ti-external-link fs-14" />
+                          </a>
+                        </div>
+                      )}
+
+                      {/* Actions Tab / Choice */}
+                      <div className="mb-2">
+                        <label className="form-label fw-semibold">Choose Action</label>
+                        <div className="d-flex align-items-center gap-3">
+                          <button
+                            type="button"
+                            className={`btn btn-sm d-flex align-items-center gap-1 ${actionType === "view" ? "btn-primary" : "btn-outline-primary"}`}
+                            onClick={() => { setActionType("view"); setModalFeedback(null); }}
+                          >
+                            <i className="ti ti-info-circle fs-16" />
+                            View Details Only
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-sm d-flex align-items-center gap-1 ${actionType === "approve" ? "btn-success" : "btn-outline-success"}`}
+                            onClick={() => { setActionType("approve"); setModalFeedback(null); }}
+                          >
+                            <i className="ti ti-check fs-16" />
+                            Approve Leave
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-sm d-flex align-items-center gap-1 ${actionType === "reject" ? "btn-danger" : "btn-outline-danger"}`}
+                            onClick={() => { setActionType("reject"); setModalFeedback(null); }}
+                          >
+                            <i className="ti ti-x fs-16" />
+                            Reject Leave
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Conditional input forms inside the modal */}
+                      {actionType === "approve" && (
+                        <div className="mt-3 p-3 border rounded bg-light-success">
+                          <h6 className="mb-2 text-success fw-bold">Select Approved Date Range</h6>
+                          <div className="row g-2">
+                            <div className="col-md-6">
+                              <label className="form-label small fw-semibold">Start Date</label>
+                              <input
+                                type="date"
+                                className="form-control"
+                                value={approvedStartDate}
+                                onChange={(e) => setApprovedStartDate(e.target.value)}
+                                min={toYmd(selectedRecord.startDate)}
+                                max={toYmd(selectedRecord.endDate)}
+                              />
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-semibold">End Date</label>
+                              <input
+                                type="date"
+                                className="form-control"
+                                value={approvedEndDate}
+                                onChange={(e) => setApprovedEndDate(e.target.value)}
+                                min={approvedStartDate || toYmd(selectedRecord.startDate)}
+                                max={toYmd(selectedRecord.endDate)}
+                              />
+                            </div>
+                          </div>
+                          <div className="form-text text-muted small mt-2">
+                            Applied range: {selectedRecord.leaveDate} ({selectedRecord.noofDays} days).
+                            {approvedStartDate && approvedEndDate && (
+                              <span className="text-success fw-semibold ms-1">
+                                Approving {Math.max(1, Math.round((new Date(approvedEndDate).getTime() - new Date(approvedStartDate).getTime()) / (24 * 60 * 60 * 1000)) + 1)} days.
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {actionType === "reject" && (
+                        <div className="mt-3 p-3 border rounded bg-light-danger">
+                          <div className="mb-0">
+                            <label className="form-label fw-semibold text-danger">Rejection Reason</label>
+                            <textarea
+                              className="form-control"
+                              rows={3}
+                              placeholder="Please provide a reason for rejecting this leave application..."
+                              value={rejectionInput}
+                              onChange={(e) => setRejectionInput(e.target.value)}
+                              required
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                  <div className="mb-0">
-                    <label className="form-label">Note</label>
-                    <textarea
-                      className="form-control"
-                      placeholder="Add Comment"
-                      rows={4}
-                      defaultValue={""}
-                    />
-                  </div>
+                    
+                    <div className="modal-footer border-top-0 pt-0 px-4 pb-3">
+                      <button
+                        type="button"
+                        className="btn btn-light"
+                        onClick={() => setSelectedRecord(null)}
+                      >
+                        Close
+                      </button>
+                      {actionType !== "view" && (
+                        <button
+                          type="submit"
+                          className={`btn ${actionType === "approve" ? "btn-success" : "btn-danger"} d-flex align-items-center gap-1`}
+                          disabled={leaveActionId != null}
+                        >
+                          {leaveActionId != null && (
+                            <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />
+                          )}
+                          Submit {actionType === "approve" ? "Approval" : "Rejection"}
+                        </button>
+                      )}
+                    </div>
+                  </form>
                 </div>
-                <div className="modal-footer">
-                  <Link
-                    to="#"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                  >
-                    Cancel
-                  </Link>
-                  <Link to="#" className="btn btn-primary" data-bs-dismiss="modal">
-                    Submit
-                  </Link>
-                </div>
-              </form>
+              </div>
             </div>
-          </div>
-        </div>
-        {/* /Leave Request */}
+            {/* Modal Backdrop overlay */}
+            <div className="modal-backdrop fade show" style={{ zIndex: 1040 }} onClick={() => setSelectedRecord(null)} />
+          </>
+        )}
         {/* Delete Modal */}
         <div className="modal fade" id="delete-modal">
           <div className="modal-dialog modal-dialog-centered">

@@ -492,8 +492,9 @@ const createLeaveApplication = async (req, res) => {
         const childIds = parentCheck.studentIds || [];
         if (!childIds.includes(Number(reqStudentId))) {
           const guardianCheck = await query(
-            `SELECT student_id FROM guardians g
-             WHERE g.user_id = $1 AND g.student_id = $2`,
+            `SELECT sgl.student_id FROM guardians g
+             INNER JOIN student_guardian_links sgl ON sgl.guardian_id = g.id
+             WHERE g.user_id = $1 AND sgl.student_id = $2`,
             [userId, reqStudentId]
           );
           if (guardianCheck.rows.length === 0) {
@@ -570,8 +571,63 @@ const createLeaveApplication = async (req, res) => {
       // Lock applicant row so balance checks and insert remain atomic per applicant.
       if (resolvedStudentId) {
         await client.query('SELECT id FROM students WHERE id = $1 FOR UPDATE', [resolvedStudentId]);
+
+        // Check if student has attendance marked as present/late/half_day on any requested date
+        const tableCheck = await client.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+              AND table_name = 'student_attendance'
+          )
+        `);
+        const tableName = tableCheck.rows[0].exists ? 'student_attendance' : 'attendance';
+        
+        const conflictingAttendance = await client.query(
+          `SELECT DISTINCT attendance_date::text
+           FROM ${tableName}
+           WHERE student_id = $1
+             AND attendance_date BETWEEN $2::date AND $3::date
+             AND LOWER(TRIM(status)) IN ('present', 'late', 'half_day', 'halfday')
+           ORDER BY attendance_date::text ASC`,
+          [resolvedStudentId, start_date, end_date]
+        );
+        
+        if (conflictingAttendance.rows.length > 0) {
+          const dates = conflictingAttendance.rows.map(r => r.attendance_date);
+          const err = new Error(`Cannot apply for leave as student is already marked as present/late/half-day on: ${dates.join(', ')}`);
+          err.statusCode = 400;
+          throw err;
+        }
       } else if (resolvedStaffId) {
         await client.query('SELECT id FROM staff WHERE id = $1 FOR UPDATE', [resolvedStaffId]);
+
+        // Check if staff has attendance marked as present/late/half_day on any requested date
+        const tableCheck = await client.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+              AND table_name = 'staff_attendance'
+          )
+        `);
+        
+        if (tableCheck.rows[0].exists) {
+          const conflictingAttendance = await client.query(
+            `SELECT DISTINCT attendance_date::text
+             FROM staff_attendance
+             WHERE staff_id = $1
+               AND attendance_date BETWEEN $2::date AND $3::date
+               AND LOWER(TRIM(status)) IN ('present', 'late', 'half_day', 'halfday')
+             ORDER BY attendance_date::text ASC`,
+            [resolvedStaffId, start_date, end_date]
+          );
+          
+          if (conflictingAttendance.rows.length > 0) {
+            const dates = conflictingAttendance.rows.map(r => r.attendance_date);
+            const err = new Error(`Cannot apply for leave as staff is already marked as present/late/half-day on: ${dates.join(', ')}`);
+            err.statusCode = 400;
+            throw err;
+          }
+        }
       }
 
       const typeResult = await client.query(
@@ -1258,7 +1314,7 @@ const getMyLeaveApplications = async (req, res) => {
     // Skip for staff-linked logins so office users never inherit a student's leave list by contact match.
     if (flags.hasStudentId && result.rows.length === 0 && !isLinkedStaffAccount) {
       const userRow = await query(
-        'SELECT email, phone FROM users WHERE id = $1 AND status = \'Active\'',
+        'SELECT email, phone FROM users WHERE id = $1 AND COALESCE(is_active, true) = true AND deleted_at IS NULL',
         [userId]
       );
       if (userRow.rows.length > 0) {
@@ -1271,18 +1327,19 @@ const getMyLeaveApplications = async (req, res) => {
               u.first_name AS applicant_first_name, u.last_name AS applicant_last_name,
               u.avatar AS applicant_photo_url, 'Student' AS applicant_role
              FROM leave_applications la
-             INNER JOIN students st ON la.student_id = st.id AND st.status = \'Active\'
+             INNER JOIN students st ON la.student_id = st.id AND st.status = 'Active'
              INNER JOIN users u ON u.id = st.user_id
              LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
              WHERE la.student_id IS NOT NULL
                AND (st.user_id IS NULL OR st.user_id != $1)
                AND (
-                 (LOWER(TRIM(COALESCE(st.email, ''))) = $2 AND $2 != '')
-                 OR (TRIM(COALESCE(st.phone, '')) = $3 AND $3 != '')
+                 (LOWER(TRIM(COALESCE(u.email, ''))) = $2 AND $2 != '')
+                 OR (TRIM(COALESCE(u.phone, '')) = $3 AND $3 != '')
                  OR EXISTS (
                    SELECT 1 FROM guardians gx
+                   INNER JOIN student_guardian_links sgl ON sgl.guardian_id = gx.id
                    INNER JOIN users ux ON ux.id = gx.user_id
-                   WHERE gx.student_id = st.id AND gx.status = \'Active\'
+                   WHERE sgl.student_id = st.id AND COALESCE(gx.is_active, true) = true
                      AND (
                        (LOWER(TRIM(COALESCE(ux.email, ''))) = $2 AND $2 != '')
                        OR (TRIM(COALESCE(ux.phone, '')) = $3 AND $3 != '')
@@ -1492,15 +1549,16 @@ const getGuardianWardLeaves = async (req, res) => {
       });
     }
 
-    const userResult = await query('SELECT id FROM users WHERE id = $1 AND status = \'Active\'', [userId]);
+    const userResult = await query('SELECT id FROM users WHERE id = $1 AND COALESCE(is_active, true) = true AND deleted_at IS NULL', [userId]);
     if (userResult.rows.length === 0) {
       return res.status(200).json({ status: 'SUCCESS', message: 'Leave applications fetched successfully', data: [], count: 0 });
     }
     const guardianResult = await query(
-      `SELECT g.student_id
+      `SELECT sgl.student_id
        FROM guardians g
-       INNER JOIN students s ON s.id = g.student_id AND s.status = \'Active\'
-       WHERE g.user_id = $1 AND g.status = 'Active'`,
+       INNER JOIN student_guardian_links sgl ON sgl.guardian_id = g.id
+       INNER JOIN students s ON s.id = sgl.student_id AND s.status = 'Active'
+       WHERE g.user_id = $1 AND COALESCE(g.is_active, true) = true`,
       [userId]
     );
     const studentIds = guardianResult.rows.map(r => r.student_id).filter(Boolean);
@@ -1596,7 +1654,9 @@ const cancelLeaveApplication = async (req, res) => {
       }
       if (!canCancel) {
         const guardianCheck = await query(
-          'SELECT 1 FROM guardians WHERE user_id = $1 AND student_id = $2 LIMIT 1',
+          `SELECT 1 FROM guardians g
+           INNER JOIN student_guardian_links sgl ON sgl.guardian_id = g.id
+           WHERE g.user_id = $1 AND sgl.student_id = $2 LIMIT 1`,
           [userId, leaveRow.student_id]
         );
         canCancel = guardianCheck.rows.length > 0;
@@ -1897,23 +1957,41 @@ const getLeaveApplications = async (req, res) => {
       });
     }
 
+    const flags = await getLeaveAppSchemaFlags();
     const conditions = [];
     const params = [];
     let i = 1;
     if (staffId && !Number.isNaN(staffId)) {
-      conditions.push(`la.applicant_staff_id = $${i++}`);
+      if (flags.isTenantLeaveLedger) {
+        conditions.push(`la.applicant_staff_id = $${i++}`);
+      } else {
+        conditions.push(`la.staff_id = $${i++}`);
+      }
       params.push(staffId);
     } else if (hasYearFilter) {
-      conditions.push(`EXISTS (
-        SELECT 1 FROM academic_years ay
-        WHERE ay.id = $${i}
-          AND (
-            (ay.start_date IS NOT NULL AND ay.end_date IS NOT NULL
-             AND la.valid_period && daterange(ay.start_date, ay.end_date, '[]'))
-            OR ay.start_date IS NULL
-            OR ay.end_date IS NULL
-          )
-      )`);
+      if (flags.isTenantLeaveLedger) {
+        conditions.push(`EXISTS (
+          SELECT 1 FROM academic_years ay
+          WHERE ay.id = $${i}
+            AND (
+              (ay.start_date IS NOT NULL AND ay.end_date IS NOT NULL
+               AND la.valid_period && daterange(ay.start_date, ay.end_date, '[]'))
+              OR ay.start_date IS NULL
+              OR ay.end_date IS NULL
+            )
+        )`);
+      } else {
+        conditions.push(`EXISTS (
+          SELECT 1 FROM academic_years ay
+          WHERE ay.id = $${i}
+            AND (
+              (ay.start_date IS NOT NULL AND ay.end_date IS NOT NULL
+               AND la.start_date <= ay.end_date AND la.end_date >= ay.start_date)
+              OR ay.start_date IS NULL
+              OR ay.end_date IS NULL
+            )
+        )`);
+      }
       params.push(academicYearId);
       i += 1;
     }
@@ -1934,15 +2012,27 @@ const getLeaveApplications = async (req, res) => {
     }
 
     if (leaveFrom && leaveTo) {
-      conditions.push(`la.valid_period && daterange($${i++}::date, $${i++}::date, '[]')`);
+      if (flags.isTenantLeaveLedger) {
+        conditions.push(`la.valid_period && daterange($${i++}::date, $${i++}::date, '[]')`);
+      } else {
+        conditions.push(`la.start_date <= $${i++}::date AND la.end_date >= $${i++}::date`);
+      }
       params.push(leaveFrom, leaveTo);
     } else if (leaveFrom) {
-      conditions.push(
-        `la.valid_period && daterange($${i++}::date, '9999-12-31'::date, '[]')`
-      );
+      if (flags.isTenantLeaveLedger) {
+        conditions.push(
+          `la.valid_period && daterange($${i++}::date, '9999-12-31'::date, '[]')`
+        );
+      } else {
+        conditions.push(`la.end_date >= $${i++}::date`);
+      }
       params.push(leaveFrom);
     } else if (leaveTo) {
-      conditions.push(`lower(la.valid_period) <= $${i++}::date`);
+      if (flags.isTenantLeaveLedger) {
+        conditions.push(`lower(la.valid_period) <= $${i++}::date`);
+      } else {
+        conditions.push(`la.start_date <= $${i++}::date`);
+      }
       params.push(leaveTo);
     }
 
@@ -1991,83 +2081,143 @@ const getLeaveApplications = async (req, res) => {
           pagination: { page, page_size: pageSize, total: 0, total_pages: 1 },
         });
       }
-      conditions.push(`la.applicant_staff_id = $${i++}`);
+      if (flags.isTenantLeaveLedger) {
+        conditions.push(`la.applicant_staff_id = $${i++}`);
+      } else {
+        conditions.push(`la.staff_id = $${i++}`);
+      }
       params.push(staffIds[0]);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const sortColumns = {
       created_at: 'COALESCE(la.updated_at, la.created_at)',
-      start_date: 'lower(la.valid_period)',
-      end_date: 'upper(la.valid_period)',
+      start_date: flags.isTenantLeaveLedger ? 'lower(la.valid_period)' : 'la.start_date',
+      end_date: flags.isTenantLeaveLedger ? 'upper(la.valid_period)' : 'la.end_date',
       status: 'LOWER(TRIM(COALESCE(la.status, \'\')))',
       leave_type: 'LOWER(TRIM(COALESCE(lt.leave_type, \'\')))',
       applicant_name: 'LOWER(TRIM(COALESCE(u.first_name, \'\')))',
     };
     const sortExpr = sortColumns[sortByRaw] || (pendingOnly
       ? 'COALESCE(la.updated_at, la.created_at)'
-      : 'lower(la.valid_period)');
+      : (flags.isTenantLeaveLedger ? 'lower(la.valid_period)' : 'la.start_date'));
     const orderBy = `ORDER BY ${sortExpr} ${sortOrder} NULLS LAST`;
     params.push(pageSize, offset);
     const limitIdx = i++;
     const offsetIdx = i++;
 
-    const result = await query(
-      `
-      SELECT
-        la.id,
-        la.applicant_staff_id,
-        la.applicant_staff_id AS staff_id,
-        la.leave_type_id,
-        la.valid_period,
-        lower(la.valid_period)::date AS start_date,
-        (CASE WHEN upper_inf(la.valid_period) THEN lower(la.valid_period)::date
-         ELSE (upper(la.valid_period)::date - interval '1 day')::date END) AS end_date,
-        la.reason,
-        la.document_url,
-        la.status,
-        la.approved_by,
-        la.approval_date,
-        la.rejection_reason,
-        la.remarks,
-        la.created_at,
-        la.updated_at,
-        lt.leave_type AS leave_type_name,
-        u.first_name AS applicant_first_name,
-        u.last_name AS applicant_last_name,
-        s.photo_url AS applicant_photo_url,
-        COALESCE(d.designation_name, 'Staff') AS applicant_role,
-        CASE
-          WHEN apru.id IS NOT NULL THEN TRIM(COALESCE(apru.first_name, '') || ' ' || COALESCE(apru.last_name, ''))
-          ELSE NULL
-        END AS approved_by_name
-      FROM leave_applications la
-      LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
-      INNER JOIN staff s ON la.applicant_staff_id = s.id
-      LEFT JOIN users u ON u.id = s.user_id
-      LEFT JOIN designations d ON s.designation_id = d.id
-      LEFT JOIN staff aprs ON la.approved_by = aprs.id
-      LEFT JOIN users apru ON apru.id = aprs.user_id
-      ${whereClause}
-      ${orderBy}
-      LIMIT $${limitIdx}
-      OFFSET $${offsetIdx}
-      `,
-      params
-    );
+    const result = flags.isTenantLeaveLedger
+      ? await query(
+          `
+          SELECT
+            la.id,
+            la.applicant_staff_id,
+            la.applicant_staff_id AS staff_id,
+            la.leave_type_id,
+            la.valid_period,
+            lower(la.valid_period)::date AS start_date,
+            (CASE WHEN upper_inf(la.valid_period) THEN lower(la.valid_period)::date
+             ELSE (upper(la.valid_period)::date - interval '1 day')::date END) AS end_date,
+            la.reason,
+            la.document_url,
+            la.status,
+            la.approved_by,
+            la.approval_date,
+            la.rejection_reason,
+            la.remarks,
+            la.created_at,
+            la.updated_at,
+            lt.leave_type AS leave_type_name,
+            u.first_name AS applicant_first_name,
+            u.last_name AS applicant_last_name,
+            s.photo_url AS applicant_photo_url,
+            COALESCE(d.designation_name, 'Staff') AS applicant_role,
+            CASE
+              WHEN apru.id IS NOT NULL THEN TRIM(COALESCE(apru.first_name, '') || ' ' || COALESCE(apru.last_name, ''))
+              ELSE NULL
+            END AS approved_by_name
+          FROM leave_applications la
+          LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
+          INNER JOIN staff s ON la.applicant_staff_id = s.id
+          LEFT JOIN users u ON u.id = s.user_id
+          LEFT JOIN designations d ON s.designation_id = d.id
+          LEFT JOIN staff aprs ON la.approved_by = aprs.id
+          LEFT JOIN users apru ON apru.id = aprs.user_id
+          ${whereClause}
+          ${orderBy}
+          LIMIT $${limitIdx}
+          OFFSET $${offsetIdx}
+          `,
+          params
+        )
+      : await query(
+          `
+          SELECT
+            la.id,
+            la.staff_id AS applicant_staff_id,
+            la.staff_id,
+            la.leave_type_id,
+            NULL::daterange AS valid_period,
+            la.start_date,
+            la.end_date,
+            la.total_days,
+            la.reason,
+            la.document_url,
+            la.status,
+            la.approved_by,
+            la.approval_date,
+            la.rejection_reason,
+            la.remarks,
+            la.created_at,
+            la.updated_at,
+            lt.leave_type AS leave_type_name,
+            u.first_name AS applicant_first_name,
+            u.last_name AS applicant_last_name,
+            s.photo_url AS applicant_photo_url,
+            COALESCE(d.designation_name, 'Staff') AS applicant_role,
+            CASE
+              WHEN apru.id IS NOT NULL THEN TRIM(COALESCE(apru.first_name, '') || ' ' || COALESCE(apru.last_name, ''))
+              ELSE NULL
+            END AS approved_by_name
+          FROM leave_applications la
+          LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
+          INNER JOIN staff s ON la.staff_id = s.id
+          LEFT JOIN users u ON u.id = s.user_id
+          LEFT JOIN designations d ON s.designation_id = d.id
+          LEFT JOIN staff aprs ON la.approved_by = aprs.id
+          LEFT JOIN users apru ON apru.id = aprs.user_id
+          ${whereClause}
+          ${orderBy}
+          LIMIT $${limitIdx}
+          OFFSET $${offsetIdx}
+          `,
+          params
+        );
 
     const countParams = params.slice(0, -2);
-    const countResult = await query(
-      `
-      SELECT COUNT(*)::int AS total
-      FROM leave_applications la
-      LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
-      INNER JOIN staff s ON la.applicant_staff_id = s.id
-      LEFT JOIN users u ON u.id = s.user_id
-      ${whereClause}
-      `,
-      countParams
-    );
+    const countResult = flags.isTenantLeaveLedger
+      ? await query(
+          `
+          SELECT COUNT(*)::int AS total
+          FROM leave_applications la
+          LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
+          INNER JOIN staff s ON la.applicant_staff_id = s.id
+          LEFT JOIN users u ON u.id = s.user_id
+          ${whereClause}
+          `,
+          countParams
+        )
+      : await query(
+          `
+          SELECT COUNT(*)::int AS total
+          FROM leave_applications la
+          LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
+          INNER JOIN staff s ON la.staff_id = s.id
+          LEFT JOIN users u ON u.id = s.user_id
+          ${whereClause}
+          `,
+          countParams
+        );
     const total = parseInt(countResult.rows[0]?.total || '0', 10) || 0;
 
     res.status(200).json({

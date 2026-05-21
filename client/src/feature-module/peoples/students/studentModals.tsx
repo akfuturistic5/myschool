@@ -61,6 +61,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
   const [applyReason, setApplyReason] = useState('')
   const [applyDocument, setApplyDocument] = useState<File | null>(null)
   const [applySubmitting, setApplySubmitting] = useState(false)
+  const [applyError, setApplyError] = useState<string | null>(null)
   const getModalContainer = () => document.body;
   const todayStart = dayjs().startOf("day");
 
@@ -398,6 +399,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
   }
 
   const hideApplyLeaveModal = () => {
+    setApplyError(null);
     const el = document.getElementById('apply_leave');
     if (el) {
       const bsModal = (window as any).bootstrap?.Modal?.getInstance(el);
@@ -407,36 +409,37 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
 
   const handleApplyLeaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setApplyError(null)
     if (!studentId) {
-      alert('Please select a student to apply leave for.')
+      setApplyError('Please select a student to apply leave for.')
       return
     }
     const typeId = applyLeaveType?.value
     if (!typeId) {
-      alert('Please select Leave Type.')
+      setApplyError('Please select Leave Type.')
       return
     }
     const isDocRequired = (applyLeaveType as any)?.requires_medical_certificate;
     if (isDocRequired && !applyDocument) {
-      alert('An attachment/document is required for this leave type.')
+      setApplyError('An attachment/document is required for this leave type.')
       return
     }
     if (!applyFromDate || !applyToDate) {
-      alert('Please select From Date and To Date.')
+      setApplyError('Please select From Date and To Date.')
       return
     }
     if (!applyReason.trim()) {
-      alert('Please enter a reason.')
+      setApplyError('Please enter a reason.')
       return
     }
     const fromStr = applyFromDate.format('YYYY-MM-DD')
     const toStr = applyToDate.format('YYYY-MM-DD')
     if (applyFromDate.startOf("day").isBefore(todayStart)) {
-      alert('Leave From Date cannot be in the past.')
+      setApplyError('Leave From Date cannot be in the past.')
       return
     }
     if (toStr < fromStr) {
-      alert('To Date must be on or after From Date.')
+      setApplyError('To Date must be on or after From Date.')
       return
     }
     setApplySubmitting(true)
@@ -447,7 +450,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
         if (uploadRes?.status === 'SUCCESS' && uploadRes?.data?.url) {
           document_url = uploadRes.data.url;
         } else {
-          alert('Failed to upload document.');
+          setApplyError('Failed to upload document.');
           setApplySubmitting(false);
           return;
         }
@@ -469,8 +472,9 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
         setApplyToDate(null)
         setApplyReason('')
         setApplyDocument(null)
+        setApplyError(null)
       } else {
-        alert(res?.message || 'Failed to apply leave.')
+        setApplyError(res?.message || 'Failed to apply leave.')
       }
     } catch (err: any) {
       let msg = err?.message || 'Failed to apply leave.'
@@ -483,7 +487,10 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
       } catch (_) {
         // ignore
       }
-      alert(msg)
+      if (msg.includes('HTTP error! status: 400, message: ')) {
+        msg = msg.replace('HTTP error! status: 400, message: ', '');
+      }
+      setApplyError(msg)
     } finally {
       setApplySubmitting(false)
     }
@@ -865,6 +872,13 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                 <div id="modal-datepicker" className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
+                      {applyError && (
+                        <div className="alert alert-danger alert-dismissible fade show d-flex align-items-center mb-3" role="alert" style={{ gap: '8px' }}>
+                          <i className="ti ti-alert-circle" style={{ fontSize: '18px' }} />
+                          <div style={{ flex: 1, fontSize: '13px', lineHeight: '1.4' }}>{applyError}</div>
+                          <button type="button" className="btn-close ms-auto" style={{ position: 'relative', top: 'auto', right: 'auto', padding: '0.5rem' }} onClick={() => setApplyError(null)} aria-label="Close" />
+                        </div>
+                      )}
                       <div className="mb-3">
                         <label className="form-label">Leave Type</label>
                         <Select
