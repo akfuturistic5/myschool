@@ -322,11 +322,11 @@ const login = async (req, res) => {
       let accountDisabled = false;
       try {
         const accCheck = await query(
-          `SELECT s.id AS student_id, s.is_active AS student_is_active, st.id AS staff_id, (st.deleted_at IS NULL AND LOWER(st.status) = 'active') AS staff_is_active
-           FROM users u
-           LEFT JOIN students s ON u.id = s.user_id
-           LEFT JOIN staff st ON u.id = st.user_id
-           WHERE u.id = $1`,
+          `SELECT s.id AS student_id, (s.status = 'Active') AS student_is_active, st.id AS staff_id, (st.deleted_at IS NULL AND LOWER(st.status) = 'active') AS staff_is_active
+            FROM users u
+            LEFT JOIN students s ON u.id = s.user_id
+            LEFT JOIN staff st ON u.id = st.user_id
+            WHERE u.id = $1`,
           [user.id]
         );
         if (accCheck.rows.length > 0) {
@@ -384,7 +384,7 @@ const login = async (req, res) => {
         s.id AS student_id,
         u.first_name AS student_first_name,
         u.last_name AS student_last_name,
-        s.is_active AS student_is_active,
+        (s.status = 'Active') AS student_is_active,
         c.class_name,
         sec.section_name,
         st.id AS staff_id,
@@ -692,7 +692,7 @@ const updateMe = async (req, res) => {
             s.id AS student_id,
             u.first_name AS student_first_name,
             u.last_name AS student_last_name,
-            s.is_active AS student_is_active,
+            (s.status = 'Active') AS student_is_active,
             c.class_name,
             sec.section_name,
             st.id AS staff_id,
@@ -729,7 +729,7 @@ const updateMe = async (req, res) => {
             s.id AS student_id,
             u.first_name AS student_first_name,
             u.last_name AS student_last_name,
-            s.is_active AS student_is_active,
+            (s.status = 'Active') AS student_is_active,
             c.class_name,
             sec.section_name,
             st.id AS staff_id,
