@@ -87,6 +87,15 @@ const EXAM_ADMIN_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 /** Exams read list */
 const EXAM_LIST_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE, ROLES.TEACHER];
 
+/** Homework create, list (teacher-scoped in controller), grade */
+const HOMEWORK_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE, ROLES.TEACHER];
+
+/** Student submit + read own homework */
+const STUDENT_HOMEWORK_ROLES = [ROLES.STUDENT];
+
+/** Parent / guardian read linked child's homework (no submit) */
+const PARENT_HOMEWORK_ROLES = [ROLES.PARENT, ROLES.GUARDIAN];
+
 module.exports = {
   ROLES,
   ADMIN_ROLE_IDS,
@@ -110,4 +119,7 @@ module.exports = {
   ACCOUNTS_MANAGER_ROLES,
   EXAM_ADMIN_ROLES,
   EXAM_LIST_ROLES,
+  HOMEWORK_MANAGER_ROLES,
+  STUDENT_HOMEWORK_ROLES,
+  PARENT_HOMEWORK_ROLES,
 };

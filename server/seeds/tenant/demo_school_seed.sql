@@ -201,11 +201,26 @@ BEGIN
     VALUES (v_year_id, v_book_id, v_student_1_id, v_lifecycle_1_id);
 
     -- [17] PRODUCTION (HOMEWORK & ENQUIRY)
-    INSERT INTO public.homework (academic_year_id, class_id, class_section_id, class_subject_id, teacher_id, teacher_assignment_id, title, assign_date, due_date) 
-    SELECT v_year_id, v_class_10_id, v_cs_10a_id, v_csub_math_id, v_staff_1_id, id, 'Math Homework 1', '2024-04-01', '2024-04-15' 
+    INSERT INTO public.homework (
+        academic_year_id, class_id, class_section_id, class_subject_id,
+        teacher_id, teacher_assignment_id, title, homework_type, status,
+        assign_date, due_date, max_marks
+    )
+    SELECT v_year_id, v_class_10_id, v_cs_10a_id, v_csub_math_id, v_staff_1_id, id,
+           'Math Homework 1', 'Homework', 'Published', '2024-04-01', '2024-04-15', 10.00
     FROM public.subject_teacher_assignments LIMIT 1 RETURNING id INTO v_hw_id;
-    INSERT INTO public.homework_submissions (homework_id, student_id, student_lifecycle_id, academic_year_id, class_id, submission_text) 
-    VALUES (v_hw_id, v_student_1_id, v_lifecycle_1_id, v_year_id, v_class_10_id, 'Solved all problems.');
+    INSERT INTO public.homework_recipients (
+        homework_id, student_id, student_lifecycle_id, academic_year_id, class_id
+    ) VALUES (v_hw_id, v_student_1_id, v_lifecycle_1_id, v_year_id, v_class_10_id);
+    INSERT INTO public.homework_attachments (homework_id, file_name, file_path, file_type)
+    VALUES (v_hw_id, 'worksheet.pdf', '/uploads/homework/worksheet.pdf', 'application/pdf');
+    INSERT INTO public.homework_submissions (
+        homework_id, student_id, student_lifecycle_id, academic_year_id, class_id,
+        submission_text, status
+    ) VALUES (
+        v_hw_id, v_student_1_id, v_lifecycle_1_id, v_year_id, v_class_10_id,
+        'Solved all problems.', 'Submitted'
+    );
     INSERT INTO public.admission_enquiries (academic_year_id, student_name, mobile_number) 
     VALUES (v_year_id, 'Alice Green', '9876543210') RETURNING id INTO v_enquiry_id;
     INSERT INTO public.enquiry_follow_ups (enquiry_id, remarks) VALUES (v_enquiry_id, 'Parent called for fee details.');

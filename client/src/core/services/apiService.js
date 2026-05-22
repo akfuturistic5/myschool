@@ -821,6 +821,129 @@ class ApiService {
     });
   }
 
+  // Homework (class work)
+  async getHomeworkList(params = {}) {
+    const search = new URLSearchParams();
+    if (params.academic_year_id != null) search.set('academic_year_id', String(params.academic_year_id));
+    if (params.class_id != null) search.set('class_id', String(params.class_id));
+    if (params.class_section_id != null) search.set('class_section_id', String(params.class_section_id));
+    if (params.class_subject_id != null) search.set('class_subject_id', String(params.class_subject_id));
+    if (params.status) search.set('status', String(params.status));
+    if (params.from_date) search.set('from_date', String(params.from_date));
+    if (params.to_date) search.set('to_date', String(params.to_date));
+    if (params.page != null) search.set('page', String(params.page));
+    if (params.limit != null) search.set('limit', String(params.limit));
+    const qs = search.toString();
+    return this.makeRequest(`/homework${qs ? `?${qs}` : ''}`);
+  }
+
+  async getHomeworkById(id) {
+    return this.makeRequest(`/homework/${id}`);
+  }
+
+  async createHomework(payload) {
+    return this.makeRequest('/homework', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getHomeworkRecipients(homeworkId) {
+    return this.makeRequest(`/homework/${homeworkId}/recipients`);
+  }
+
+  async updateHomework(id, payload) {
+    return this.makeRequest(`/homework/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async patchHomeworkStatus(id, status) {
+    return this.makeRequest(`/homework/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  async deleteHomework(id) {
+    return this.makeRequest(`/homework/${id}`, { method: 'DELETE' });
+  }
+
+  async getHomeworkSubmissions(homeworkId) {
+    return this.makeRequest(`/homework/${homeworkId}/submissions`);
+  }
+
+  async addHomeworkAttachment(homeworkId, payload) {
+    return this.makeRequest(`/homework/${homeworkId}/attachments`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteHomeworkAttachment(attachmentId) {
+    return this.makeRequest(`/homework/attachments/${attachmentId}`, { method: 'DELETE' });
+  }
+
+  async evaluateHomeworkSubmission(submissionId, payload) {
+    return this.makeRequest(`/homework/submissions/${submissionId}/evaluate`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async returnHomeworkSubmission(submissionId, payload) {
+    return this.makeRequest(`/homework/submissions/${submissionId}/return`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async uploadHomeworkFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', 'uploads/homework');
+    return this.makeRequest('/storage/upload', {
+      method: 'POST',
+      body: formData,
+      isMultipart: true,
+    });
+  }
+
+  async uploadHomeworkSubmissionFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', 'uploads/homework-submissions');
+    return this.makeRequest('/storage/upload', {
+      method: 'POST',
+      body: formData,
+      isMultipart: true,
+    });
+  }
+
+  async getMyHomeworkList() {
+    return this.makeRequest('/homework/my');
+  }
+
+  async getMyHomeworkById(homeworkId) {
+    return this.makeRequest(`/homework/my/${homeworkId}`);
+  }
+
+  async submitMyHomework(homeworkId, payload) {
+    return this.makeRequest(`/homework/my/${homeworkId}/submissions`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getChildHomeworkList(studentId) {
+    return this.makeRequest(`/homework/parent/${studentId}`);
+  }
+
+  async getChildHomeworkById(studentId, homeworkId) {
+    return this.makeRequest(`/homework/parent/${studentId}/${homeworkId}`);
+  }
+
   async getGradeReport(params = {}) {
     const search = new URLSearchParams();
     if (params.classId != null) search.set('class_id', String(params.classId));
