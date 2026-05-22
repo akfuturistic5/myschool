@@ -10,8 +10,21 @@ import { selectUser } from "../../../core/data/redux/authSlice";
 import { all_routes } from "../../router/all_routes";
 import HomeworkEditModal from "./HomeworkEditModal";
 import Swal from "sweetalert2";
+import "./homework-swals.scss";
 
 type TabKey = "overview" | "recipients" | "submissions";
+
+const escapeSwalHtml = (value: unknown) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+const HOMEWORK_SWAL_FORM_CLASS = {
+  popup: "homework-swal-popup",
+  htmlContainer: "homework-swal-html p-0 overflow-visible",
+};
 
 const statusBadgeClass = (status: string) => {
   const s = String(status).toLowerCase();
@@ -150,25 +163,82 @@ const HomeworkDetailPage = () => {
   const openGradeModal = async (sub: Record<string, unknown>) => {
     const maxMarks = homework?.max_marks != null ? Number(homework.max_marks) : null;
     const isGraded = homework?.is_graded !== false;
+    const studentName = escapeSwalHtml(sub.student_name);
+    const marksValue = escapeSwalHtml(sub.marks_obtained ?? "");
+    const feedbackValue = escapeSwalHtml(sub.teacher_feedback ?? "");
 
     const { value: formValues } = await Swal.fire({
-      title: `Grade — ${sub.student_name}`,
+      title: "Grade submission",
+      width: 480,
+      customClass: HOMEWORK_SWAL_FORM_CLASS,
       html: `
-        <div class="text-start">
-          ${isGraded ? `<label class="form-label">Marks (max ${maxMarks ?? "—"})</label>
-          <input id="swal-marks" type="number" class="swal2-input" style="width:100%;margin:0 0 8px" value="${sub.marks_obtained ?? ""}" />` : ""}
-          <label class="form-label">Feedback</label>
-          <textarea id="swal-feedback" class="swal2-textarea" style="width:100%">${sub.teacher_feedback ?? ""}</textarea>
+        <div class="homework-grade-form text-start w-100">
+          <p class="text-muted small mb-3">Student: <strong class="text-dark">${studentName}</strong></p>
+          ${
+            isGraded
+              ? `<div class="mb-3">
+                  <label class="form-label mb-1" for="swal-marks">Marks obtained</label>
+                  <div class="input-group">
+                    <input
+                      id="swal-marks"
+                      type="number"
+                      class="form-control"
+                      min="0"
+                      ${maxMarks != null ? `max="${maxMarks}"` : ""}
+                      step="0.5"
+                      value="${marksValue}"
+                      placeholder="Enter marks"
+                    />
+                    ${
+                      maxMarks != null
+                        ? `<span class="input-group-text text-muted">/ ${maxMarks}</span>`
+                        : ""
+                    }
+                  </div>
+                </div>`
+              : ""
+          }
+          <div class="mb-0">
+            <label class="form-label mb-1" for="swal-feedback">Teacher feedback</label>
+            <textarea
+              id="swal-feedback"
+              class="form-control"
+              rows="4"
+              placeholder="Optional comments for the student"
+            >${feedbackValue}</textarea>
+          </div>
         </div>
       `,
       showCancelButton: true,
       confirmButtonText: "Save grade",
+      focusConfirm: false,
       preConfirm: () => {
         const marksEl = document.getElementById("swal-marks") as HTMLInputElement | null;
         const feedbackEl = document.getElementById("swal-feedback") as HTMLTextAreaElement | null;
+        let marks: number | null = null;
+        if (isGraded && marksEl) {
+          const raw = marksEl.value.trim();
+          if (raw === "") {
+            Swal.showValidationMessage("Enter marks for graded homework");
+            return false;
+          }
+          marks = Number(raw);
+          if (Number.isNaN(marks)) {
+            Swal.showValidationMessage("Marks must be a number");
+            return false;
+          }
+          if (maxMarks != null && marks > maxMarks) {
+            Swal.showValidationMessage(`Marks cannot exceed ${maxMarks}`);
+            return false;
+          }
+          if (marks < 0) {
+            Swal.showValidationMessage("Marks cannot be negative");
+            return false;
+          }
+        }
         return {
-          marks: marksEl?.value !== "" && marksEl ? Number(marksEl.value) : null,
-          feedback: feedbackEl?.value ?? "",
+          marks,
+          feedback: feedbackEl?.value?.trim() ?? "",
         };
       },
     });
@@ -189,12 +259,35 @@ const HomeworkDetailPage = () => {
   };
 
   const handleReturn = async (sub: Record<string, unknown>) => {
+    const studentName = escapeSwalHtml(sub.student_name);
+    const feedbackValue = escapeSwalHtml(sub.teacher_feedback ?? "");
+
     const { value: feedback } = await Swal.fire({
-      title: `Return to ${sub.student_name}`,
-      input: "textarea",
-      inputLabel: "Feedback for student",
-      inputValue: String(sub.teacher_feedback ?? ""),
+      title: "Return for correction",
+      width: 480,
+      customClass: HOMEWORK_SWAL_FORM_CLASS,
+      html: `
+        <div class="homework-return-form text-start w-100">
+          <p class="text-muted small mb-3">Student: <strong class="text-dark">${studentName}</strong></p>
+          <div class="mb-0">
+            <label class="form-label mb-1" for="swal-return-feedback">Feedback for student</label>
+            <textarea
+              id="swal-return-feedback"
+              class="form-control"
+              rows="4"
+              placeholder="Explain what the student should correct or resubmit"
+            >${feedbackValue}</textarea>
+          </div>
+        </div>
+      `,
       showCancelButton: true,
+      confirmButtonText: "Request resubmission",
+      confirmButtonColor: "#f59e0b",
+      focusConfirm: false,
+      preConfirm: () => {
+        const el = document.getElementById("swal-return-feedback") as HTMLTextAreaElement | null;
+        return el?.value?.trim() ?? "";
+      },
     });
     if (feedback === undefined) return;
     try {
@@ -273,6 +366,8 @@ const HomeworkDetailPage = () => {
   );
 
   const attachments = Array.isArray(homework?.attachments) ? (homework.attachments as Record<string, unknown>[]) : [];
+  const descriptionText = String(homework?.description ?? "").trim();
+  const instructionsText = String(homework?.instructions ?? "").trim();
 
   if (loading) {
     return (
@@ -307,9 +402,9 @@ const HomeworkDetailPage = () => {
                   <Link to={dashboardRoute}>Dashboard</Link>
                 </li>
                 <li className="breadcrumb-item">
-                  <Link to={routes.classHomeWork}>Class Work</Link>
+                  <Link to={routes.classHomeWork}>Home Work</Link>
                 </li>
-                <li className="breadcrumb-item active">HW{homework.id}</li>
+                <li className="breadcrumb-item active">HW{String(homework.id)}</li>
               </ol>
             </nav>
           </div>
@@ -367,16 +462,16 @@ const HomeworkDetailPage = () => {
                     <strong>Assign:</strong> {formatDateDMY(homework.assign_date as string)} · <strong>Due:</strong>{" "}
                     {formatDateDMY(homework.due_date as string)}
                   </p>
-                  {homework.description && (
+                  {descriptionText ? (
                     <p className="mb-2">
-                      <strong>Description:</strong> {String(homework.description)}
+                      <strong>Description:</strong> {descriptionText}
                     </p>
-                  )}
-                  {homework.instructions && (
+                  ) : null}
+                  {instructionsText ? (
                     <p className="mb-0">
-                      <strong>Instructions:</strong> {String(homework.instructions)}
+                      <strong>Instructions:</strong> {instructionsText}
                     </p>
-                  )}
+                  ) : null}
                 </div>
               </div>
               <div className="card">

@@ -116,15 +116,25 @@ const HomeworkEditModal = ({ homework, onSuccess }: HomeworkEditModalProps) => {
   return (
     <div className="modal fade" id="edit_home_work">
       <div className="modal-dialog modal-dialog-centered modal-lg">
-        <div className="modal-content">
-          <div className="modal-header">
+        <div
+          className="modal-content d-flex flex-column"
+          style={{ maxHeight: "min(90vh, 820px)" }}
+        >
+          <div className="modal-header flex-shrink-0">
             <h4 className="modal-title">Edit Home Work</h4>
             <button type="button" className="btn-close custom-btn-close" data-bs-dismiss="modal" aria-label="Close">
               <i className="ti ti-x" />
             </button>
           </div>
-          <form onSubmit={handleSubmit}>
-            <div className="modal-body">
+          <form
+            onSubmit={handleSubmit}
+            className="d-flex flex-column flex-grow-1 overflow-hidden"
+            style={{ minHeight: 0 }}
+          >
+            <div
+              className="modal-body overflow-y-auto flex-grow-1"
+              style={{ maxHeight: "calc(90vh - 140px)" }}
+            >
               {!isDraft && (
                 <div className="alert alert-info py-2 small">
                   Published homework: only title, description, instructions, due date, and policy fields can be changed.
@@ -162,13 +172,15 @@ const HomeworkEditModal = ({ homework, onSuccess }: HomeworkEditModalProps) => {
                   <input type="date" className="form-control" value={dueDate} min={assignDate} onChange={(e) => setDueDate(e.target.value)} />
                 </div>
               </div>
-              <div className="mb-3">
-                <label className="form-label">Description</label>
-                <textarea className="form-control" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-              </div>
-              <div className="mb-3">
-                <label className="form-label">Instructions</label>
-                <textarea className="form-control" rows={3} value={instructions} onChange={(e) => setInstructions(e.target.value)} />
+              <div className="row">
+                <div className="mb-3 col-md-6">
+                  <label className="form-label">Description</label>
+                  <textarea className="form-control" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+                </div>
+                <div className="mb-3 col-md-6">
+                  <label className="form-label">Instructions</label>
+                  <textarea className="form-control" rows={3} value={instructions} onChange={(e) => setInstructions(e.target.value)} />
+                </div>
               </div>
               <div className="row align-items-end">
                 <div className="col-md-4 mb-3">
@@ -197,7 +209,7 @@ const HomeworkEditModal = ({ homework, onSuccess }: HomeworkEditModalProps) => {
                 </div>
               </div>
             </div>
-            <div className="modal-footer">
+            <div className="modal-footer flex-shrink-0 border-top bg-white">
               <Link to="#" className="btn btn-light me-2" data-bs-dismiss="modal">Cancel</Link>
               <button type="submit" className="btn btn-primary" disabled={saving}>
                 {saving ? "Saving..." : "Save Changes"}
