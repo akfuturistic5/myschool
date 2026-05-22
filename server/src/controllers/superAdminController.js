@@ -777,7 +777,7 @@ const impersonateSchool = async (req, res) => {
 
       try {
         const accCheck = await query(
-          `SELECT s.id AS student_id, s.is_active AS student_is_active, st.id AS staff_id, (st.deleted_at IS NULL AND LOWER(st.status) = 'active') AS staff_is_active
+          `SELECT s.id AS student_id, (s.status = 'Active') AS student_is_active, st.id AS staff_id, (st.deleted_at IS NULL AND LOWER(st.status) = 'active') AS staff_is_active
            FROM users u
            LEFT JOIN students s ON u.id = s.user_id
            LEFT JOIN staff st ON u.id = st.user_id

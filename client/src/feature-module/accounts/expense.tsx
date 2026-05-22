@@ -100,6 +100,11 @@ const Expense = () => {
   };
   const [addForm, setAddForm] = useState({ ...emptyForm });
   const [editForm, setEditForm] = useState({ ...emptyForm });
+  const [addFile, setAddFile] = useState<File | null>(null);
+  const [editFile, setEditFile] = useState<File | null>(null);
+  const [addFileKey, setAddFileKey] = useState(0);
+  const [editFileKey, setEditFileKey] = useState(0);
+  const [removeExistingDoc, setRemoveExistingDoc] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -253,6 +258,8 @@ const Expense = () => {
       category_id: categoryOptions[0]?.value || "",
       payment_method: defaultPaymentMethod,
     });
+    setAddFile(null);
+    setAddFileKey((k) => k + 1);
     setTimeout(() => showModal("add_expenses"), 0);
   };
 
@@ -271,6 +278,9 @@ const Expense = () => {
           r.payment_method && r.payment_method !== "Select" ? r.payment_method : defaultPaymentMethod,
         status: r.status === "Pending" ? "Pending" : "Completed",
       });
+      setRemoveExistingDoc(false);
+      setEditFile(null);
+      setEditFileKey((k) => k + 1);
       setFormError(null);
       setTimeout(() => showModal("edit_expenses"), 0);
     },
@@ -310,6 +320,14 @@ const Expense = () => {
         key: "description",
         sorter: true,
         sortOrder: sortOrderFor("description"),
+        render: (text: any) => (
+          <div
+            className="text-wrap text-break"
+            style={{ minWidth: "150px", maxWidth: "250px", wordBreak: "break-word", whiteSpace: "normal" }}
+          >
+            {text || "—"}
+          </div>
+        ),
       },
       {
         title: "Category",
@@ -383,7 +401,7 @@ const Expense = () => {
                 <Link
                   to="#"
                   className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                  data-bs-toggle="dropdown"
+                  data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                   aria-expanded="false"
                 >
                   <i className="ti ti-dots-vertical fs-14" />
@@ -469,20 +487,44 @@ const Expense = () => {
         setSaving(false);
         return;
       }
-      await apiService.createAccountsExpense({
-        expense_name: addForm.expense_name.trim(),
-        category_id: cid,
-        expense_date: ymd,
-        amount: amt,
-        description: addForm.description.trim() || null,
-        invoice_no: addForm.invoice_no.trim() || null,
-        payment_method:
-          addForm.payment_method && addForm.payment_method !== "Select" ? addForm.payment_method : null,
-        status: addForm.status === "Pending" ? "Pending" : "Completed",
-        ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
-      });
+
+      let payload: any;
+      if (addFile) {
+        const formData = new FormData();
+        formData.append("expense_name", addForm.expense_name.trim());
+        formData.append("category_id", String(cid));
+        formData.append("expense_date", ymd);
+        formData.append("amount", String(amt));
+        if (addForm.description.trim()) formData.append("description", addForm.description.trim());
+        if (addForm.invoice_no.trim()) formData.append("invoice_no", addForm.invoice_no.trim());
+        if (addForm.payment_method && addForm.payment_method !== "Select") {
+          formData.append("payment_method", addForm.payment_method);
+        }
+        formData.append("status", addForm.status === "Pending" ? "Pending" : "Completed");
+        if (academicYearId != null) {
+          formData.append("academic_year_id", String(academicYearId));
+        }
+        formData.append("document", addFile);
+        payload = formData;
+      } else {
+        payload = {
+          expense_name: addForm.expense_name.trim(),
+          category_id: cid,
+          expense_date: ymd,
+          amount: amt,
+          description: addForm.description.trim() || null,
+          invoice_no: addForm.invoice_no.trim() || null,
+          payment_method:
+            addForm.payment_method && addForm.payment_method !== "Select" ? addForm.payment_method : null,
+          status: addForm.status === "Pending" ? "Pending" : "Completed",
+          ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
+        };
+      }
+
+      await apiService.createAccountsExpense(payload);
       hideModal("add_expenses");
       setAddForm({ ...emptyForm });
+      setAddFile(null);
       await load();
     } catch (err: unknown) {
       setFormError(getAccountsErrorMessage(err, "Could not save expense."));
@@ -511,19 +553,49 @@ const Expense = () => {
         setSaving(false);
         return;
       }
-      await apiService.updateAccountsExpense(id, {
-        expense_name: editForm.expense_name.trim(),
-        category_id: cid,
-        expense_date: ymd,
-        amount: amt,
-        description: editForm.description.trim() || null,
-        invoice_no: editForm.invoice_no.trim() || null,
-        payment_method:
-          editForm.payment_method && editForm.payment_method !== "Select" ? editForm.payment_method : null,
-        status: editForm.status === "Pending" ? "Pending" : "Completed",
-        ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
-      });
+
+      let payload: any;
+      if (editFile || removeExistingDoc) {
+        const formData = new FormData();
+        formData.append("expense_name", editForm.expense_name.trim());
+        formData.append("category_id", String(cid));
+        formData.append("expense_date", ymd);
+        formData.append("amount", String(amt));
+        if (editForm.description.trim()) formData.append("description", editForm.description.trim());
+        if (editForm.invoice_no.trim()) formData.append("invoice_no", editForm.invoice_no.trim());
+        if (editForm.payment_method && editForm.payment_method !== "Select") {
+          formData.append("payment_method", editForm.payment_method);
+        }
+        formData.append("status", editForm.status === "Pending" ? "Pending" : "Completed");
+        if (academicYearId != null) {
+          formData.append("academic_year_id", String(academicYearId));
+        }
+        if (editFile) {
+          formData.append("document", editFile);
+        }
+        if (removeExistingDoc) {
+          formData.append("remove_document", "true");
+        }
+        payload = formData;
+      } else {
+        payload = {
+          expense_name: editForm.expense_name.trim(),
+          category_id: cid,
+          expense_date: ymd,
+          amount: amt,
+          description: editForm.description.trim() || null,
+          invoice_no: editForm.invoice_no.trim() || null,
+          payment_method:
+            editForm.payment_method && editForm.payment_method !== "Select" ? editForm.payment_method : null,
+          status: editForm.status === "Pending" ? "Pending" : "Completed",
+          ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
+        };
+      }
+
+      await apiService.updateAccountsExpense(id, payload);
       hideModal("edit_expenses");
+      setEditFile(null);
+      setRemoveExistingDoc(false);
       await load();
     } catch (err: unknown) {
       setFormError(getAccountsErrorMessage(err, "Could not update expense."));
@@ -808,13 +880,25 @@ const Expense = () => {
                         onChange={(v) => setAddForm((f) => ({ ...f, status: v || "Completed" }))}
                       />
                     </div>
-                    <div className="mb-0">
+                    <div className="mb-3">
                       <label className="form-label">Description</label>
                       <textarea
                         rows={4}
                         className="form-control"
                         value={addForm.description}
                         onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))}
+                      />
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">Attachment / Document (Optional)</label>
+                      <input
+                        type="file"
+                        key={`add-file-${addFileKey}`}
+                        className="form-control"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          setAddFile(file);
+                        }}
                       />
                     </div>
                   </div>
@@ -825,6 +909,7 @@ const Expense = () => {
                   to="#"
                   className="btn btn-light me-2"
                   data-bs-dismiss="modal"
+                  onClick={() => setAddFile(null)}
                 >
                   Cancel
                 </Link>
@@ -932,7 +1017,7 @@ const Expense = () => {
                         onChange={(v) => setEditForm((f) => ({ ...f, status: v || "Completed" }))}
                       />
                     </div>
-                    <div className="mb-0">
+                    <div className="mb-3">
                       <label className="form-label">Description</label>
                       <textarea
                         rows={4}
@@ -942,6 +1027,64 @@ const Expense = () => {
                         onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
                       />
                     </div>
+                    <div className="mb-3">
+                      <label className="form-label">Attachment / Document (Optional)</label>
+                      {selectedRecord?.raw?.file_path && !removeExistingDoc ? (
+                        <div className="d-flex align-items-center justify-content-between p-2 border rounded bg-light mb-2">
+                          <div className="d-flex align-items-center gap-2 overflow-hidden">
+                            <i className="ti ti-file-text text-info fs-18 flex-shrink-0" />
+                            <a
+                              href={
+                                selectedRecord.raw.file_path.startsWith("http")
+                                  ? selectedRecord.raw.file_path
+                                  : `/api/storage/files/${selectedRecord.raw.file_path}`
+                              }
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-truncate text-primary fw-medium"
+                            >
+                              {selectedRecord.raw.document_name || "View Current Document"}
+                            </a>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-outline-danger btn-sm px-2 py-1"
+                            onClick={() => {
+                              setRemoveExistingDoc(true);
+                              setEditFile(null);
+                            }}
+                          >
+                            <i className="ti ti-trash me-1" />
+                            Remove
+                          </button>
+                        </div>
+                      ) : (
+                        <div>
+                          {removeExistingDoc && (
+                            <div className="mb-2 text-warning fs-12 d-flex align-items-center gap-1">
+                              <i className="ti ti-alert-triangle" />
+                              Current document will be deleted upon saving.
+                              <button
+                                type="button"
+                                className="btn btn-link text-decoration-none p-0 fs-12 ms-2"
+                                onClick={() => setRemoveExistingDoc(false)}
+                              >
+                                Undo
+                              </button>
+                            </div>
+                          )}
+                          <input
+                            type="file"
+                            key={`edit-file-${editFileKey}`}
+                            className="form-control"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              setEditFile(file);
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -950,6 +1093,10 @@ const Expense = () => {
                   to="#"
                   className="btn btn-light me-2"
                   data-bs-dismiss="modal"
+                  onClick={() => {
+                    setEditFile(null);
+                    setRemoveExistingDoc(false);
+                  }}
                 >
                   Cancel
                 </Link>

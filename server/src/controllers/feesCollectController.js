@@ -437,7 +437,7 @@ const getFeeCollectionsList = async (req, res) => {
                   AND fct.is_optional = true
                   AND f.deleted_at IS NULL
              ) opt ON TRUE
-             WHERE s.is_active = true
+             WHERE s.status = 'Active'
              ORDER BY curr.class_name ASC NULLS LAST, u.first_name ASC`,
             [academic_year_id]
         );

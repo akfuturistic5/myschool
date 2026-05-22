@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
@@ -97,6 +96,11 @@ const AccountsIncome = () => {
   };
   const [addForm, setAddForm] = useState({ ...emptyAdd });
   const [editForm, setEditForm] = useState({ ...emptyAdd });
+  const [addFile, setAddFile] = useState<File | null>(null);
+  const [editFile, setEditFile] = useState<File | null>(null);
+  const [addFileKey, setAddFileKey] = useState(0);
+  const [editFileKey, setEditFileKey] = useState(0);
+  const [removeExistingDoc, setRemoveExistingDoc] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -247,6 +251,8 @@ const AccountsIncome = () => {
       category_id: categoryOptions[0]?.value || "",
       payment_method: defaultPaymentMethod,
     });
+    setAddFile(null);
+    setAddFileKey((k) => k + 1);
     setTimeout(() => showModal("add_income"), 0);
   };
 
@@ -269,6 +275,9 @@ const AccountsIncome = () => {
       payment_method:
         r.payment_method && r.payment_method !== "Select" ? r.payment_method : defaultPaymentMethod,
     });
+    setRemoveExistingDoc(false);
+    setEditFile(null);
+    setEditFileKey((k) => k + 1);
     setFormError(null);
     setTimeout(() => showModal("edit_income"), 0);
   }, []);
@@ -287,18 +296,6 @@ const AccountsIncome = () => {
         key: "id",
         sorter: true,
         sortOrder: sortOrderFor("id"),
-        render: (text: any, record: any) => (
-          <Link
-            to="#"
-            className="link-primary"
-            onClick={(e) => {
-              e.preventDefault();
-              openView(record);
-            }}
-          >
-            {text}
-          </Link>
-        ),
       },
       {
         title: "Income Name",
@@ -318,6 +315,14 @@ const AccountsIncome = () => {
         key: "description",
         sorter: true,
         sortOrder: sortOrderFor("description"),
+        render: (text: any) => (
+          <div
+            className="text-wrap text-break"
+            style={{ minWidth: "150px", maxWidth: "250px", wordBreak: "break-word", whiteSpace: "normal" }}
+          >
+            {text || "—"}
+          </div>
+        ),
       },
       {
         title: "Source",
@@ -367,6 +372,34 @@ const AccountsIncome = () => {
         sortOrder: sortOrderFor("payment_method"),
       },
       {
+        title: "Attachment",
+        dataIndex: "attachment",
+        key: "attachment",
+        render: (_: any, record: any) => {
+          const filePath = record.raw?.file_path;
+          const fileName = record.raw?.document_name || "Download";
+          if (!filePath) return <span className="text-muted">-</span>;
+
+          const url = filePath.startsWith("http")
+            ? filePath
+            : filePath.startsWith("school_")
+            ? `/api/storage/files/${filePath}`
+            : `/api/storage/files/${filePath}`;
+
+          return (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="badge badge-soft-info d-inline-flex align-items-center gap-1"
+            >
+              <i className="ti ti-paperclip fs-12" />
+              {fileName.length > 20 ? fileName.slice(0, 17) + "..." : fileName}
+            </a>
+          );
+        },
+      },
+      {
         title: "Action",
         dataIndex: "action",
         key: "_action",
@@ -376,7 +409,7 @@ const AccountsIncome = () => {
               <Link
                 to="#"
                 className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                data-bs-toggle="dropdown"
+                data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                 aria-expanded="false"
               >
                 <i className="ti ti-dots-vertical fs-14" />
@@ -458,20 +491,44 @@ const AccountsIncome = () => {
         setSaving(false);
         return;
       }
-      await apiService.createAccountsIncome({
-        income_name: addForm.income_name.trim(),
-        category_id: cid,
-        source: addForm.source.trim() || null,
-        description: addForm.description.trim() || null,
-        income_date: ymd,
-        amount: amt,
-        invoice_no: addForm.invoice_no.trim() || null,
-        payment_method:
-          addForm.payment_method && addForm.payment_method !== "Select" ? addForm.payment_method : null,
-        ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
-      });
+
+      let payload: any;
+      if (addFile) {
+        const formData = new FormData();
+        formData.append("income_name", addForm.income_name.trim());
+        formData.append("category_id", String(cid));
+        if (addForm.source.trim()) formData.append("source", addForm.source.trim());
+        if (addForm.description.trim()) formData.append("description", addForm.description.trim());
+        formData.append("income_date", ymd);
+        formData.append("amount", String(amt));
+        if (addForm.invoice_no.trim()) formData.append("invoice_no", addForm.invoice_no.trim());
+        if (addForm.payment_method && addForm.payment_method !== "Select") {
+          formData.append("payment_method", addForm.payment_method);
+        }
+        if (academicYearId != null) {
+          formData.append("academic_year_id", String(academicYearId));
+        }
+        formData.append("document", addFile);
+        payload = formData;
+      } else {
+        payload = {
+          income_name: addForm.income_name.trim(),
+          category_id: cid,
+          source: addForm.source.trim() || null,
+          description: addForm.description.trim() || null,
+          income_date: ymd,
+          amount: amt,
+          invoice_no: addForm.invoice_no.trim() || null,
+          payment_method:
+            addForm.payment_method && addForm.payment_method !== "Select" ? addForm.payment_method : null,
+          ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
+        };
+      }
+
+      await apiService.createAccountsIncome(payload);
       hideModal("add_income");
       setAddForm({ ...emptyAdd });
+      setAddFile(null);
       await load();
     } catch (err: unknown) {
       setFormError(getAccountsErrorMessage(err, "Could not save income."));
@@ -500,19 +557,49 @@ const AccountsIncome = () => {
         setSaving(false);
         return;
       }
-      await apiService.updateAccountsIncome(id, {
-        income_name: editForm.income_name.trim(),
-        category_id: cid,
-        source: editForm.source.trim() || null,
-        description: editForm.description.trim() || null,
-        income_date: ymd,
-        amount: amt,
-        invoice_no: editForm.invoice_no.trim() || null,
-        payment_method:
-          editForm.payment_method && editForm.payment_method !== "Select" ? editForm.payment_method : null,
-        ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
-      });
+
+      let payload: any;
+      if (editFile || removeExistingDoc) {
+        const formData = new FormData();
+        formData.append("income_name", editForm.income_name.trim());
+        formData.append("category_id", String(cid));
+        if (editForm.source.trim()) formData.append("source", editForm.source.trim());
+        if (editForm.description.trim()) formData.append("description", editForm.description.trim());
+        formData.append("income_date", ymd);
+        formData.append("amount", String(amt));
+        if (editForm.invoice_no.trim()) formData.append("invoice_no", editForm.invoice_no.trim());
+        if (editForm.payment_method && editForm.payment_method !== "Select") {
+          formData.append("payment_method", editForm.payment_method);
+        }
+        if (academicYearId != null) {
+          formData.append("academic_year_id", String(academicYearId));
+        }
+        if (editFile) {
+          formData.append("document", editFile);
+        }
+        if (removeExistingDoc) {
+          formData.append("remove_document", "true");
+        }
+        payload = formData;
+      } else {
+        payload = {
+          income_name: editForm.income_name.trim(),
+          category_id: cid,
+          source: editForm.source.trim() || null,
+          description: editForm.description.trim() || null,
+          income_date: ymd,
+          amount: amt,
+          invoice_no: editForm.invoice_no.trim() || null,
+          payment_method:
+            editForm.payment_method && editForm.payment_method !== "Select" ? editForm.payment_method : null,
+          ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
+        };
+      }
+
+      await apiService.updateAccountsIncome(id, payload);
       hideModal("edit_income");
+      setEditFile(null);
+      setRemoveExistingDoc(false);
       await load();
     } catch (err: unknown) {
       setFormError(getAccountsErrorMessage(err, "Could not update income."));
@@ -805,6 +892,20 @@ const AccountsIncome = () => {
                       />
                     </div>
                   </div>
+                  <div className="col-md-12">
+                    <div className="mb-3">
+                      <label className="form-label">Attachment / Document (Optional)</label>
+                      <input
+                        type="file"
+                        key={`add-file-${addFileKey}`}
+                        className="form-control"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          setAddFile(file);
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
               <div className="modal-footer">
@@ -812,6 +913,7 @@ const AccountsIncome = () => {
                   to="#"
                   className="btn btn-light me-2"
                   data-bs-dismiss="modal"
+                  onClick={() => setAddFile(null)}
                 >
                   Cancel
                 </Link>
@@ -942,6 +1044,66 @@ const AccountsIncome = () => {
                       />
                     </div>
                   </div>
+                  <div className="col-md-12">
+                    <div className="mb-3">
+                      <label className="form-label">Attachment / Document (Optional)</label>
+                      {selectedRecord?.raw?.file_path && !removeExistingDoc ? (
+                        <div className="d-flex align-items-center justify-content-between p-2 border rounded bg-light mb-2">
+                          <div className="d-flex align-items-center gap-2 overflow-hidden">
+                            <i className="ti ti-file-text text-info fs-18 flex-shrink-0" />
+                            <a
+                              href={
+                                selectedRecord.raw.file_path.startsWith("http")
+                                  ? selectedRecord.raw.file_path
+                                  : `/api/storage/files/${selectedRecord.raw.file_path}`
+                              }
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-truncate text-primary fw-medium"
+                            >
+                              {selectedRecord.raw.document_name || "View Current Document"}
+                            </a>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-outline-danger btn-sm px-2 py-1"
+                            onClick={() => {
+                              setRemoveExistingDoc(true);
+                              setEditFile(null);
+                            }}
+                          >
+                            <i className="ti ti-trash me-1" />
+                            Remove
+                          </button>
+                        </div>
+                      ) : (
+                        <div>
+                          {removeExistingDoc && (
+                            <div className="mb-2 text-warning fs-12 d-flex align-items-center gap-1">
+                              <i className="ti ti-alert-triangle" />
+                              Current document will be deleted upon saving.
+                              <button
+                                type="button"
+                                className="btn btn-link text-decoration-none p-0 fs-12 ms-2"
+                                onClick={() => setRemoveExistingDoc(false)}
+                              >
+                                Undo
+                              </button>
+                            </div>
+                          )}
+                          <input
+                            type="file"
+                            key={`edit-file-${editFileKey}`}
+                            className="form-control"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              setEditFile(file);
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
               <div className="modal-footer">
@@ -949,6 +1111,10 @@ const AccountsIncome = () => {
                   to="#"
                   className="btn btn-light me-2"
                   data-bs-dismiss="modal"
+                  onClick={() => {
+                    setEditFile(null);
+                    setRemoveExistingDoc(false);
+                  }}
                 >
                   Cancel
                 </Link>

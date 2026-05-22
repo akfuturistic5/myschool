@@ -89,7 +89,9 @@ class ApiService {
     const bodyKey = options.body
       ? (typeof options.body === 'string'
         ? options.body
-        : JSON.stringify(options.body)).substring(0, 120)
+        : (typeof FormData !== 'undefined' && options.body instanceof FormData
+          ? '[FormData]'
+          : JSON.stringify(options.body))).substring(0, 120)
       : '';
     const requestKey = `${method}:${endpoint}:${bodyKey}`;
 
@@ -3537,16 +3539,20 @@ class ApiService {
   }
 
   async createAccountsIncome(data) {
+    const isMultipart = typeof FormData !== 'undefined' && data instanceof FormData;
     return this.makeRequest('/accounts/income', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: isMultipart ? data : JSON.stringify(data),
+      isMultipart,
     });
   }
 
   async updateAccountsIncome(id, data) {
+    const isMultipart = typeof FormData !== 'undefined' && data instanceof FormData;
     return this.makeRequest(`/accounts/income/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(data),
+      body: isMultipart ? data : JSON.stringify(data),
+      isMultipart,
     });
   }
 
@@ -3667,16 +3673,20 @@ class ApiService {
   }
 
   async createAccountsExpense(data) {
+    const isMultipart = typeof FormData !== 'undefined' && data instanceof FormData;
     return this.makeRequest('/accounts/expenses', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: isMultipart ? data : JSON.stringify(data),
+      isMultipart,
     });
   }
 
   async updateAccountsExpense(id, data) {
+    const isMultipart = typeof FormData !== 'undefined' && data instanceof FormData;
     return this.makeRequest(`/accounts/expenses/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(data),
+      body: isMultipart ? data : JSON.stringify(data),
+      isMultipart,
     });
   }
 

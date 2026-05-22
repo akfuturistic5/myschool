@@ -9,6 +9,7 @@ import { activeList, leaveType, MonthDate, Role } from "../../../../core/common/
 import TooltipOption from "../../../../core/common/tooltipOption";
 import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
 import { useLeaveApplications } from "../../../../core/hooks/useLeaveApplications";
+import { useLeaveTypes } from "../../../../core/hooks/useLeaveTypes";
 import { apiService } from "../../../../core/services/apiService";
 import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
 import { parseFetchErrorMessage } from "../../../../core/utils/parseFetchErrorMessage";
@@ -38,25 +39,56 @@ const ApproveRequest = () => {
   const [rejectionInput, setRejectionInput] = useState<string>("");
   const [modalFeedback, setModalFeedback] = useState<{ type: "success" | "danger"; text: string } | null>(null);
 
+  // Filters state
+  const [filterStatus, setFilterStatus] = useState<string>("pending");
+  const [filterLeaveTypeId, setFilterLeaveTypeId] = useState<string>("all");
+  const [filterRole, setFilterRole] = useState<string>("all");
+
   const { user: currentUser } = useCurrentUser() as any;
   const roleName = String(currentUser?.role_name || currentUser?.role || "").toLowerCase();
   const roleId = Number(currentUser?.user_role_id);
   const isTeacher = roleId === 2 || roleName === "teacher" || roleName.includes("teacher");
   const canUseAdminList = isTeacher || isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser);
   const applicantType = isTeacher ? "student" : "staff";
+
+  const { leaveTypes } = useLeaveTypes({ applicableFor: isTeacher ? "student" : "staff" });
+  
+  const leaveTypeOptions = useMemo(() => {
+    const source = leaveTypes.length > 0 ? leaveTypes : leaveType;
+    const mapped = (Array.isArray(source) ? source : []).map((item: any) => ({
+      value: String(item.value ?? item.id ?? ""),
+      label: String(item.label ?? item.leave_type ?? item.name ?? "Leave Type"),
+    }));
+    return [{ value: "all", label: "All" }, ...mapped];
+  }, [leaveTypes]);
+
+  const leaveStatusOptions = [
+    { value: "pending", label: "Pending" },
+    { value: "approved", label: "Approved" },
+    { value: "rejected", label: "Rejected" },
+    { value: "all", label: "All" },
+  ];
+
   const { leaveApplications, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
-    limit: 50,
+    limit: 100,
     canUseAdminList,
-    pendingOnly: true,
+    pendingOnly: false,
+    status: filterStatus === "all" ? "pending,approved,rejected" : filterStatus,
+    leaveTypeId: filterLeaveTypeId === "all" ? null : Number(filterLeaveTypeId),
     applicantType,
   }) as any;
 
   const data = useMemo(() => {
     if (!Array.isArray(leaveApplications)) return [];
-    const pendingOnly = leaveApplications.filter((row) =>
-      String(row?.status ?? "").toLowerCase() === "pending"
-    );
-    return pendingOnly.map((row) => ({
+    
+    let filtered = leaveApplications;
+    if (filterRole && filterRole !== "Select" && filterRole !== "all") {
+      filtered = filtered.filter((row) =>
+        String(row?.role ?? "").toLowerCase() === filterRole.toLowerCase()
+      );
+    }
+
+    return filtered.map((row) => ({
       key: row.key ?? String(row.id),
       id: row.id,
       submittedBy: row.name ?? "—",
@@ -71,8 +103,11 @@ const ApproveRequest = () => {
       photoUrl: row.photoUrl ?? "",
       startDate: row.startDate,
       endDate: row.endDate,
+      approvedBy: row.approvedBy ?? null,
+      approvedDate: row.approvedDate ?? null,
+      rejectionReason: row.rejectionReason ?? null,
     }));
-  }, [leaveApplications]);
+  }, [leaveApplications, filterRole]);
 
   const handleOpenAction = (record: any, type: "view" | "approve" | "reject") => {
     setSelectedRecord(record);
@@ -217,7 +252,6 @@ const ApproveRequest = () => {
         const statusLower = (record?.status ?? "").toString().toLowerCase();
         const isApproved = statusLower.includes("approv");
         const isRejected = statusLower.includes("reject") || statusLower.includes("declin");
-        const disabled = leaveActionId != null || isApproved || isRejected;
         if (id == null) return null;
         return (
           <div className="d-flex gap-1 align-items-center">
@@ -225,29 +259,33 @@ const ApproveRequest = () => {
               type="button"
               className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1"
               onClick={() => handleOpenAction(record, "view")}
-              disabled={disabled}
+              disabled={leaveActionId != null}
             >
               <i className="ti ti-eye fs-14" />
               Review
             </button>
-            <button
-              type="button"
-              className="avatar avatar-xs p-0 btn btn-success"
-              onClick={() => handleOpenAction(record, "approve")}
-              disabled={disabled}
-              title="Approve"
-            >
-              <i className="ti ti-checks" />
-            </button>
-            <button
-              type="button"
-              className="avatar avatar-xs p-0 btn btn-danger"
-              onClick={() => handleOpenAction(record, "reject")}
-              disabled={disabled}
-              title="Reject"
-            >
-              <i className="ti ti-x" />
-            </button>
+            {!isApproved && !isRejected && (
+              <>
+                <button
+                  type="button"
+                  className="avatar avatar-xs p-0 btn btn-success"
+                  onClick={() => handleOpenAction(record, "approve")}
+                  disabled={leaveActionId != null}
+                  title="Approve"
+                >
+                  <i className="ti ti-checks" />
+                </button>
+                <button
+                  type="button"
+                  className="avatar avatar-xs p-0 btn btn-danger"
+                  onClick={() => handleOpenAction(record, "reject")}
+                  disabled={leaveActionId != null}
+                  title="Reject"
+                >
+                  <i className="ti ti-x" />
+                </button>
+              </>
+            )}
           </div>
         );
       },
@@ -343,7 +381,9 @@ const ApproveRequest = () => {
             <div className="card">
               <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
                 <h4 className="mb-3">
-                  {isTeacher ? "Pending Student Leave Requests" : "Pending Leave Requests"}
+                  {isTeacher
+                    ? `${filterStatus === "pending" ? "Pending" : filterStatus === "approved" ? "Approved" : filterStatus === "rejected" ? "Rejected" : "All"} Student Leave Requests`
+                    : `${filterStatus === "pending" ? "Pending" : filterStatus === "approved" ? "Approved" : filterStatus === "rejected" ? "Rejected" : "All"} Leave Requests`}
                 </h4>
                 <div className="d-flex align-items-center flex-wrap">
                   <div className="input-icon-start mb-3 me-2 position-relative">
@@ -369,10 +409,11 @@ const ApproveRequest = () => {
                             <div className="col-md-6">
                               <div className="mb-3">
                                 <label className="form-label">Leave Type</label>
-                               
                                 <CommonSelect
                                   className="select"
-                                  options={leaveType}
+                                  options={leaveTypeOptions}
+                                  value={filterLeaveTypeId}
+                                  onChange={(val) => setFilterLeaveTypeId(val || "all")}
                                 />
                               </div>
                             </div>
@@ -382,6 +423,8 @@ const ApproveRequest = () => {
                                 <CommonSelect
                                   className="select"
                                   options={Role}
+                                  value={filterRole}
+                                  onChange={(val) => setFilterRole(val || "all")}
                                 />
                               </div>
                             </div>
@@ -401,14 +444,24 @@ const ApproveRequest = () => {
                                 <label className="form-label">Status</label>
                                 <CommonSelect
                                   className="select"
-                                  options={activeList}
+                                  options={leaveStatusOptions}
+                                  value={filterStatus}
+                                  onChange={(val) => setFilterStatus(val || "pending")}
                                 />
                               </div>
                             </div>
                           </div>
                         </div>
                         <div className="p-3 d-flex align-items-center justify-content-end">
-                          <Link to="#" className="btn btn-light me-3">
+                          <Link
+                            to="#"
+                            className="btn btn-light me-3"
+                            onClick={() => {
+                              setFilterStatus("pending");
+                              setFilterLeaveTypeId("all");
+                              setFilterRole("all");
+                            }}
+                          >
                             Reset
                           </Link>
                           <Link
@@ -469,6 +522,60 @@ const ApproveRequest = () => {
                 </div>
               </div>
               <div className="card-body p-0 py-3">
+                {/* Quick Status Filter Tabs */}
+                <div className="px-3 border-bottom mb-3 pb-3">
+                  <ul className="nav nav-tabs nav-tabs-solid nav-tabs-rounded mb-0">
+                    <li className="nav-item">
+                      <Link
+                        to="#"
+                        className={`nav-link ${filterStatus === "pending" ? "active" : ""}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setFilterStatus("pending");
+                        }}
+                      >
+                        Pending Requests
+                      </Link>
+                    </li>
+                    <li className="nav-item">
+                      <Link
+                        to="#"
+                        className={`nav-link ${filterStatus === "approved" ? "active" : ""}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setFilterStatus("approved");
+                        }}
+                      >
+                        Approved Requests
+                      </Link>
+                    </li>
+                    <li className="nav-item">
+                      <Link
+                        to="#"
+                        className={`nav-link ${filterStatus === "rejected" ? "active" : ""}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setFilterStatus("rejected");
+                        }}
+                      >
+                        Rejected Requests
+                      </Link>
+                    </li>
+                    <li className="nav-item">
+                      <Link
+                        to="#"
+                        className={`nav-link ${filterStatus === "all" ? "active" : ""}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setFilterStatus("all");
+                        }}
+                      >
+                        All History
+                      </Link>
+                    </li>
+                  </ul>
+                </div>
+
                 {actionFeedback && (
                   <div
                     className={`alert alert-${actionFeedback.type === "success" ? "success" : "danger"} mx-3 mt-3 mb-0 d-flex justify-content-between align-items-start gap-2`}
@@ -601,40 +708,81 @@ const ApproveRequest = () => {
                           </a>
                         </div>
                       )}
+                      {/* Finalized Status Details */}
+                      {(selectedRecord.status === "approved" || selectedRecord.status === "rejected") && (
+                        <div className={`mb-3 p-3 rounded ${selectedRecord.status === "approved" ? "bg-light-success text-success border-success" : "bg-light-danger text-danger border-danger"}`} style={{ border: "1px solid", borderLeftWidth: "4px" }}>
+                          <div className="d-flex align-items-center gap-2 mb-2">
+                            <i className={`ti ${selectedRecord.status === "approved" ? "ti-checkbox fs-20" : "ti-square-x fs-20"}`} />
+                            <h6 className={`mb-0 fw-bold ${selectedRecord.status === "approved" ? "text-success" : "text-danger"}`}>
+                              Leave Application {selectedRecord.status === "approved" ? "Approved" : "Rejected"}
+                            </h6>
+                          </div>
+                          {selectedRecord.status === "approved" && (
+                            <div className="row g-2 text-dark small">
+                              <div className="col-sm-6">
+                                <span className="text-muted d-block small">Approved Date Range</span>
+                                <span className="fw-semibold">{selectedRecord.leaveDate}</span>
+                              </div>
+                              <div className="col-sm-6">
+                                <span className="text-muted d-block small">Total Days</span>
+                                <span className="fw-semibold">{selectedRecord.noofDays} days</span>
+                              </div>
+                            </div>
+                          )}
+                          {selectedRecord.status === "rejected" && (
+                            <div className="text-dark small">
+                              <span className="text-muted d-block small">Rejection Reason</span>
+                              <p className="mb-0 fw-medium bg-white p-2 rounded border mt-1" style={{ whiteSpace: "pre-wrap" }}>
+                                {selectedRecord.rejectionReason || "No reason provided."}
+                              </p>
+                            </div>
+                          )}
+                          {selectedRecord.approvedBy && (
+                            <div className="mt-2 pt-2 border-top text-muted small d-flex justify-content-between align-items-center">
+                              <span>Processed by: <strong>{selectedRecord.approvedBy}</strong></span>
+                              {selectedRecord.approvedDate && (
+                                <span>Date: <strong>{toYmd(selectedRecord.approvedDate)}</strong></span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* Actions Tab / Choice */}
-                      <div className="mb-2">
-                        <label className="form-label fw-semibold">Choose Action</label>
-                        <div className="d-flex align-items-center gap-3">
-                          <button
-                            type="button"
-                            className={`btn btn-sm d-flex align-items-center gap-1 ${actionType === "view" ? "btn-primary" : "btn-outline-primary"}`}
-                            onClick={() => { setActionType("view"); setModalFeedback(null); }}
-                          >
-                            <i className="ti ti-info-circle fs-16" />
-                            View Details Only
-                          </button>
-                          <button
-                            type="button"
-                            className={`btn btn-sm d-flex align-items-center gap-1 ${actionType === "approve" ? "btn-success" : "btn-outline-success"}`}
-                            onClick={() => { setActionType("approve"); setModalFeedback(null); }}
-                          >
-                            <i className="ti ti-check fs-16" />
-                            Approve Leave
-                          </button>
-                          <button
-                            type="button"
-                            className={`btn btn-sm d-flex align-items-center gap-1 ${actionType === "reject" ? "btn-danger" : "btn-outline-danger"}`}
-                            onClick={() => { setActionType("reject"); setModalFeedback(null); }}
-                          >
-                            <i className="ti ti-x fs-16" />
-                            Reject Leave
-                          </button>
+                      {selectedRecord.status !== "approved" && selectedRecord.status !== "rejected" && (
+                        <div className="mb-2">
+                          <label className="form-label fw-semibold">Choose Action</label>
+                          <div className="d-flex align-items-center gap-3">
+                            <button
+                              type="button"
+                              className={`btn btn-sm d-flex align-items-center gap-1 ${actionType === "view" ? "btn-primary" : "btn-outline-primary"}`}
+                              onClick={() => { setActionType("view"); setModalFeedback(null); }}
+                            >
+                              <i className="ti ti-info-circle fs-16" />
+                              View Details Only
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn btn-sm d-flex align-items-center gap-1 ${actionType === "approve" ? "btn-success" : "btn-outline-success"}`}
+                              onClick={() => { setActionType("approve"); setModalFeedback(null); }}
+                            >
+                              <i className="ti ti-check fs-16" />
+                              Approve Leave
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn btn-sm d-flex align-items-center gap-1 ${actionType === "reject" ? "btn-danger" : "btn-outline-danger"}`}
+                              onClick={() => { setActionType("reject"); setModalFeedback(null); }}
+                            >
+                              <i className="ti ti-x" />
+                              Reject Leave
+                            </button>
+                          </div>
                         </div>
-                      </div>
+                      )}
 
                       {/* Conditional input forms inside the modal */}
-                      {actionType === "approve" && (
+                      {selectedRecord.status !== "approved" && selectedRecord.status !== "rejected" && actionType === "approve" && (
                         <div className="mt-3 p-3 border rounded bg-light-success">
                           <h6 className="mb-2 text-success fw-bold">Select Approved Date Range</h6>
                           <div className="row g-2">
@@ -672,7 +820,7 @@ const ApproveRequest = () => {
                         </div>
                       )}
 
-                      {actionType === "reject" && (
+                      {selectedRecord.status !== "approved" && selectedRecord.status !== "rejected" && actionType === "reject" && (
                         <div className="mt-3 p-3 border rounded bg-light-danger">
                           <div className="mb-0">
                             <label className="form-label fw-semibold text-danger">Rejection Reason</label>
