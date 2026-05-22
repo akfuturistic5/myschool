@@ -105,6 +105,68 @@ async function assertTeacherMayUseAssignment(user, assignment) {
 /**
  * Active students in a class_section for the academic year (lifecycle-scoped).
  */
+async function assertManagerCanAccessClassSection(user, classSectionId, academicYearId) {
+  if (isAdminRole(user)) return { ok: true };
+  if (!isTeacherRole(user)) {
+    return { ok: false, status: 403, message: 'Not authorized for this class section' };
+  }
+  const staffId = await resolveStaffIdForUser(user.id);
+  if (!staffId) {
+    return { ok: false, status: 403, message: 'Teacher staff profile not found' };
+  }
+  const r = await query(
+    `SELECT 1
+     FROM subject_teacher_assignments sta
+     WHERE sta.class_section_id = $1
+       AND sta.academic_year_id = $2
+       AND sta.staff_id = $3
+       AND sta.deleted_at IS NULL
+     LIMIT 1`,
+    [parseId(classSectionId), parseId(academicYearId), staffId]
+  );
+  if (!r.rows.length) {
+    return { ok: false, status: 403, message: 'Not authorized for this class section' };
+  }
+  return { ok: true };
+}
+
+/**
+ * Students in section for homework create UI (names + roll for bulk picker).
+ */
+async function listSectionStudentsForPicker(classSectionId, academicYearId, user) {
+  const csId = parseId(classSectionId);
+  const ayId = parseId(academicYearId);
+  if (!csId || !ayId) {
+    return { ok: false, status: 400, message: 'class_section_id and academic_year_id are required' };
+  }
+
+  const access = await assertManagerCanAccessClassSection(user, csId, ayId);
+  if (!access.ok) return access;
+
+  const r = await query(
+    `SELECT
+      s.id AS student_id,
+      s.roll_number,
+      s.admission_number,
+      TRIM(CONCAT(COALESCE(su.first_name, ''), ' ', COALESCE(su.last_name, ''))) AS student_name
+    FROM class_sections cs
+    INNER JOIN students s ON s.deleted_at IS NULL AND s.status = 'Active'
+    LEFT JOIN users su ON su.id = s.user_id
+    ${lateralCurrentEnrollment('s.id', { academicYearIdParam: '$2' })}
+    WHERE cs.id = $1
+      AND cs.deleted_at IS NULL
+      AND cs.academic_year_id = $2
+      AND enr.class_id = cs.class_id
+      AND enr.section_id = cs.section_id
+      AND enr.academic_year_id = cs.academic_year_id
+      AND enr.lifecycle_id IS NOT NULL
+    ORDER BY NULLIF(TRIM(s.roll_number), '') NULLS LAST, student_name ASC, s.id ASC`,
+    [csId, ayId]
+  );
+
+  return { ok: true, students: r.rows };
+}
+
 async function listSectionStudentsForRecipients(classSectionId, academicYearId, client = null) {
   const q = client ? client.query.bind(client) : query;
   const csId = parseId(classSectionId);
@@ -1270,4 +1332,5 @@ module.exports = {
   submitMyHomework,
   loadTeacherAssignment,
   listSectionStudentsForRecipients,
+  listSectionStudentsForPicker,
 };

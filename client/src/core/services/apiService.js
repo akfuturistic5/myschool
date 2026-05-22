@@ -841,6 +841,13 @@ class ApiService {
     return this.makeRequest(`/homework/${id}`);
   }
 
+  async getHomeworkSectionStudents(classSectionId, academicYearId) {
+    const q = new URLSearchParams();
+    q.set('class_section_id', String(classSectionId));
+    q.set('academic_year_id', String(academicYearId));
+    return this.makeRequest(`/homework/section-students?${q.toString()}`);
+  }
+
   async createHomework(payload) {
     return this.makeRequest('/homework', {
       method: 'POST',

@@ -36,5 +36,13 @@ export type SubjectAssignmentOption = {
   className: string;
   sectionName: string;
   subjectName: string;
+  teacherName?: string;
   label: string;
+};
+
+export type HomeworkSectionStudent = {
+  student_id: number;
+  student_name: string;
+  roll_number?: string | null;
+  admission_number?: string | null;
 };

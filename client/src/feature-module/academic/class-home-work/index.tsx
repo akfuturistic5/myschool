@@ -13,6 +13,7 @@ import { useCurrentTeacher } from "../../../core/hooks/useCurrentTeacher";
 import { apiService } from "../../../core/services/apiService";
 import { extractMessageFromApiError } from "../../../core/utils/apiErrorMessage";
 import { getDashboardForRole, isAdministrativeRole, isHeadmasterRole } from "../../../core/utils/roleUtils";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import type { HomeworkListItem, SubjectAssignmentOption } from "../../../core/types/homework";
 import HomeworkModal from "./HomeworkModal";
 import HomeworkEditModal from "./HomeworkEditModal";
@@ -124,10 +125,20 @@ const ClassHomeWork = () => {
             section_name?: string;
             subjectName?: string;
             subject_name?: string;
+            teacherFirstName?: string;
+            teacher_first_name?: string;
+            teacherLastName?: string;
+            teacher_last_name?: string;
           }) => {
             const className = r.className ?? r.class_name ?? "";
             const sectionName = r.sectionName ?? r.section_name ?? "";
             const subjectName = r.subjectName ?? r.subject_name ?? "";
+            const teacherName = [r.teacherFirstName ?? r.teacher_first_name, r.teacherLastName ?? r.teacher_last_name]
+              .filter(Boolean)
+              .join(" ")
+              .trim();
+            const baseParts = [className, sectionName, subjectName].filter(Boolean);
+            const labelParts = !isTeacherOnly && teacherName ? [...baseParts, teacherName] : baseParts;
             return {
               id: r.id,
               teacherId: r.teacherId ?? r.staff_id ?? 0,
@@ -138,7 +149,8 @@ const ClassHomeWork = () => {
               className: String(className),
               sectionName: String(sectionName),
               subjectName: String(subjectName),
-              label: [className, sectionName, subjectName].filter(Boolean).join(" · "),
+              teacherName: teacherName || undefined,
+              label: labelParts.join(" · "),
             };
           }
         );
@@ -227,9 +239,83 @@ const ClassHomeWork = () => {
     setFilterSubjectId(null);
   };
 
+  const exportRows = useMemo(
+    () =>
+      rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        class: r.class,
+        section: r.section,
+        subject: r.subject,
+        assignDate: r.homeworkDate,
+        dueDate: r.submissionDate,
+        status: r.status,
+        type: r.homeworkType,
+        teacher: r.createdBy,
+        submissions: `${r.submittedCount}/${r.recipientCount}`,
+      })),
+    [rows]
+  );
+
+  const exportColumns = useMemo(
+    () => [
+      { title: "ID", dataKey: "id" },
+      { title: "Title", dataKey: "title" },
+      { title: "Class", dataKey: "class" },
+      { title: "Section", dataKey: "section" },
+      { title: "Subject", dataKey: "subject" },
+      { title: "Assign date", dataKey: "assignDate" },
+      { title: "Due date", dataKey: "dueDate" },
+      { title: "Status", dataKey: "status" },
+      { title: "Type", dataKey: "type" },
+      { title: "Teacher", dataKey: "teacher" },
+      { title: "Submitted", dataKey: "submissions" },
+    ],
+    []
+  );
+
+  const exportFileStamp = () => new Date().toISOString().split("T")[0];
+
   const handleRefresh = async () => {
     await refetch();
     Swal.fire({ icon: "success", title: "Refreshed", timer: 1000, showConfirmButton: false });
+  };
+
+  const handleExportExcel = () => {
+    if (!exportRows.length) {
+      Swal.fire({ icon: "info", title: "No data", text: "There is no homework to export." });
+      return;
+    }
+    const excelData = exportRows.map((r) => ({
+      ID: r.id,
+      Title: r.title,
+      Class: r.class,
+      Section: r.section,
+      Subject: r.subject,
+      "Assign date": r.assignDate,
+      "Due date": r.dueDate,
+      Status: r.status,
+      Type: r.type,
+      Teacher: r.teacher,
+      Submitted: r.submissions,
+    }));
+    exportToExcel(excelData, `Class_Homework_${exportFileStamp()}`, "Homework");
+  };
+
+  const handleExportPDF = () => {
+    if (!exportRows.length) {
+      Swal.fire({ icon: "info", title: "No data", text: "There is no homework to export." });
+      return;
+    }
+    exportToPDF(exportRows, "Class Home Work", `Class_Homework_${exportFileStamp()}`, exportColumns);
+  };
+
+  const handlePrint = () => {
+    if (!exportRows.length) {
+      Swal.fire({ icon: "info", title: "No data", text: "There is no homework to print." });
+      return;
+    }
+    printData("Class Home Work", exportColumns, exportRows);
   };
 
   const detailPath = (homeworkId: number) =>
@@ -421,7 +507,7 @@ const ClassHomeWork = () => {
         <div className="content">
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
-              <h3 className="page-title mb-1">Class Work</h3>
+              <h3 className="page-title mb-1">Home Work</h3>
               <nav>
                 <ol className="breadcrumb mb-0">
                   <li className="breadcrumb-item">
@@ -431,17 +517,18 @@ const ClassHomeWork = () => {
                     <Link to="#">Academic</Link>
                   </li>
                   <li className="breadcrumb-item active" aria-current="page">
-                    Class Work
+                    Home Work
                   </li>
                 </ol>
               </nav>
             </div>
-            <div className="d-flex my-xl-auto right-content align-items-center flex-wrap gap-2">
-              <TooltipOption />
-              <button type="button" className="btn btn-outline-light bg-white mb-2" onClick={handleRefresh}>
-                <i className="ti ti-refresh me-1" />
-                Refresh
-              </button>
+            <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
+              <TooltipOption
+                onRefresh={handleRefresh}
+                onPrint={handlePrint}
+                onExportExcel={handleExportExcel}
+                onExportPdf={handleExportPDF}
+              />
               <div className="mb-2">
                 <Link
                   to="#"
@@ -465,7 +552,7 @@ const ClassHomeWork = () => {
 
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-              <h4 className="mb-3">Class Home Work</h4>
+              <h4 className="mb-3">Home Work</h4>
               <div className="d-flex align-items-center flex-wrap">
                 <div className="dropdown mb-3 me-2">
                   <Link

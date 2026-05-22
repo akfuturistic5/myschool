@@ -1,0 +1,27 @@
+.homework-swal-popup {
+  .homework-swal-html {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 1rem 1.25rem 0.25rem !important;
+    overflow: visible !important;
+    text-align: left !important;
+  }
+
+  .homework-grade-form,
+  .homework-return-form {
+    .form-label {
+      font-weight: 500;
+      color: var(--bs-body-color, #212529);
+    }
+
+    .input-group {
+      flex-wrap: nowrap;
+    }
+
+    .form-control {
+      width: 100%;
+      box-sizing: border-box;
+    }
+  }
+}

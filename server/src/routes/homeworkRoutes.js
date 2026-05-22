@@ -4,6 +4,7 @@ const { HOMEWORK_MANAGER_ROLES, STUDENT_HOMEWORK_ROLES, PARENT_HOMEWORK_ROLES } 
 const {
   listHomework,
   getHomework,
+  listSectionStudents,
   createHomework,
   updateHomework,
   patchHomeworkStatus,
@@ -43,6 +44,7 @@ router.post('/my/:homeworkId/submissions', student, validateSubmitHomework, subm
 router.get('/parent/:studentId', parentPortal, listChildHomework);
 router.get('/parent/:studentId/:homeworkId', parentPortal, getChildHomework);
 
+router.get('/section-students', manage, listSectionStudents);
 router.get('/', manage, listHomework);
 router.post('/', manage, validateCreateHomework, createHomework);
 
