@@ -107,6 +107,12 @@ const updateProfile = async (req, res) => {
     }
 
     await ensureSchoolProfile(req.user?.school_name || null);
+
+    const prevRes = await query(
+      `SELECT school_name FROM school_profile ORDER BY id ASC LIMIT 1`
+    );
+    const previousSchoolName = prevRes.rows?.[0]?.school_name ?? null;
+
     const updated = await query(
       `UPDATE school_profile
        SET school_name = $1,
@@ -119,6 +125,32 @@ const updateProfile = async (req, res) => {
        RETURNING id, school_name, logo_url, phone, email, fax, address, created_at, updated_at`,
       [schoolName, phone, email, fax, address]
     );
+
+    const schoolId = req.user?.school_id;
+    if (schoolId != null) {
+      try {
+        await masterQuery(
+          `UPDATE schools SET school_name = $1 WHERE id = $2 AND deleted_at IS NULL`,
+          [schoolName, schoolId]
+        );
+      } catch (e) {
+        console.error('School profile: failed to sync master_db.schools.school_name:', e);
+        try {
+          await query(
+            `UPDATE school_profile SET school_name = $1, updated_at = NOW()
+             WHERE id = (SELECT id FROM school_profile ORDER BY id ASC LIMIT 1)`,
+            [previousSchoolName]
+          );
+        } catch (revertErr) {
+          console.error('School profile: revert school_profile after master failure:', revertErr);
+        }
+        return errorResponse(
+          res,
+          500,
+          'Could not save school name to the platform registry. Your previous name was restored.'
+        );
+      }
+    }
 
     return success(res, 200, 'School profile updated', updated.rows[0] || null);
   } catch (err) {

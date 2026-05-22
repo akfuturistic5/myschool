@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 import Table from "../../../../core/common/dataTable/index";
 import TooltipOption from "../../../../core/common/tooltipOption";
 import { all_routes } from "../../../router/all_routes";
 import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
+import { selectUser } from "../../../../core/data/redux/authSlice";
 import { apiService } from "../../../../core/services/apiService";
 import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
 import { parseFetchErrorMessage } from "../../../../core/utils/parseFetchErrorMessage";
@@ -46,11 +48,25 @@ const defaultForm: LeaveTypeForm = {
 
 const LeaveTypesPage = () => {
   const routes = all_routes;
-  const { user } = useCurrentUser();
-  const canManageLeaveTypes = isHeadmasterRole(user) || isAdministrativeRole(user);
+  const { user: meUser, loading: meLoading } = useCurrentUser();
+  const reduxUser = useSelector(selectUser);
+
+  const canManageLeaveTypes = useMemo(() => {
+    const candidates = [meUser, reduxUser].filter(Boolean);
+    if (candidates.length === 0) return false;
+    return candidates.some(
+      (candidate) =>
+        isHeadmasterRole(candidate as Parameters<typeof isHeadmasterRole>[0]) ||
+        isAdministrativeRole(candidate as Parameters<typeof isAdministrativeRole>[0])
+    );
+  }, [meUser, reduxUser]);
+
+  /** Wait for auth before permission checks — avoids a brief "Access denied" flash while /auth/me loads. */
+  const sessionPending = meLoading && !meUser && !reduxUser;
+  const authResolved = !sessionPending;
 
   const [rows, setRows] = useState<LeaveTypeRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "danger"; text: string } | null>(null);
   const [includeInactive, setIncludeInactive] = useState(true);
@@ -63,7 +79,7 @@ const LeaveTypesPage = () => {
   const [editForm, setEditForm] = useState<LeaveTypeForm>(defaultForm);
 
   const fetchRows = async () => {
-    if (!canManageLeaveTypes) return;
+    if (!authResolved || !canManageLeaveTypes) return;
     setLoading(true);
     setError(null);
     try {
@@ -97,8 +113,9 @@ const LeaveTypesPage = () => {
   };
 
   useEffect(() => {
+    if (!authResolved || !canManageLeaveTypes) return;
     fetchRows();
-  }, [includeInactive, canManageLeaveTypes]);
+  }, [includeInactive, authResolved, canManageLeaveTypes]);
 
   const formatDate = (value?: string | null) => {
     if (!value) return "—";
@@ -320,6 +337,18 @@ const LeaveTypesPage = () => {
     printWindow.focus();
     printWindow.print();
   };
+
+  if (sessionPending) {
+    return (
+      <div className="page-wrapper">
+        <div className="content">
+          <div className="text-center py-5">
+            <div className="spinner-border text-primary" role="status" aria-label="Loading session" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!canManageLeaveTypes) {
     return (

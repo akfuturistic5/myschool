@@ -185,8 +185,8 @@ const Feature = () => {
     (currentUser as { role?: string } | null)?.role ??
     '';
   const schoolNameForTitle =
-    (currentUser as { school_name?: string } | null)?.school_name ??
     reduxUser?.school_name ??
+    (currentUser as { school_name?: string } | null)?.school_name ??
     '';
   useEffect(() => {
     document.title = getTabTitleForSchoolRole(schoolNameForTitle, roleForTitle);

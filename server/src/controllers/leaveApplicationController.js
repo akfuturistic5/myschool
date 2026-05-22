@@ -5,6 +5,7 @@ const { ROLES } = require('../config/roles');
 const { jsonSafeRow } = require('../utils/jsonSafeRow');
 const { canAccessStudent } = require('../utils/accessControl');
 const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
+const { hasColumn } = require('../utils/schemaInspector');
 
 const VALID_FINAL_LEAVE_STATUSES = new Set(['approved', 'rejected', 'cancelled']);
 /** Status tokens allowed in ?status= (comma- or space-separated) */
@@ -90,6 +91,45 @@ async function getLeaveTypeSchemaFlags() {
   return leaveTypeSchemaFlagsPromise;
 }
 
+/** Cached active-row SQL for staff/students/users/guardians (status vs is_active per tenant). */
+const tableActiveSqlCache = new Map();
+
+async function buildTableActiveSql(tableName, alias = '') {
+  const table = String(tableName || '').trim().toLowerCase();
+  const allowed = new Set(['staff', 'students', 'users', 'guardians']);
+  if (!allowed.has(table)) return 'TRUE';
+  const cacheKey = `${table}:${alias || ''}`;
+  if (tableActiveSqlCache.has(cacheKey)) return tableActiveSqlCache.get(cacheKey);
+
+  const hasIsActive = await hasColumn(table, 'is_active');
+  const hasStatus = await hasColumn(table, 'status');
+  const hasDeletedAt = await hasColumn(table, 'deleted_at');
+  const prefix = alias ? `${alias}.` : '';
+
+  const parts = [];
+  if (hasIsActive) {
+    parts.push(`COALESCE(${prefix}is_active, true) = true`);
+  } else if (hasStatus) {
+    parts.push(
+      `LOWER(TRIM(COALESCE(NULLIF(TRIM(${prefix}status), ''), 'Active'))) = 'active'`
+    );
+  }
+  if (hasDeletedAt) {
+    parts.push(`${prefix}deleted_at IS NULL`);
+  }
+
+  const sql = parts.length ? parts.join(' AND ') : 'TRUE';
+  tableActiveSqlCache.set(cacheKey, sql);
+  return sql;
+}
+
+function leaveTypeActiveWhere(flags, alias = '') {
+  const prefix = alias ? `${alias}.` : '';
+  if (flags.hasIsActive) return `COALESCE(${prefix}is_active, true) = true`;
+  if (flags.hasDeletedAt) return `${prefix}deleted_at IS NULL`;
+  return 'TRUE';
+}
+
 async function resolveActorStaffId(userId) {
   if (!userId) return null;
   const actorStaff = await query('SELECT id FROM staff WHERE user_id = $1 LIMIT 1', [userId]);
@@ -98,12 +138,12 @@ async function resolveActorStaffId(userId) {
 
 async function resolveTeacherScopeIds(userId) {
   if (!userId) return { teacherIds: [], staffIds: [] };
+  const staffActiveSql = await buildTableActiveSql('staff');
   const staffRes = await query(
     `SELECT id
      FROM staff
      WHERE user_id = $1
-       AND deleted_at IS NULL
-       AND COALESCE(is_active, true) = true
+       AND ${staffActiveSql}
      LIMIT 1`,
     [userId]
   );
@@ -150,7 +190,7 @@ const getLeaveTypes = async (req, res) => {
       const applicableForRaw = String(req.query.applicable_for || '').trim().toLowerCase();
       const scopedApplicableFor =
         applicableForRaw === 'student' || applicableForRaw === 'staff' ? applicableForRaw : null;
-      const whereParts = ['COALESCE(is_active, true) = true'];
+      const whereParts = [leaveTypeActiveWhere(flags)];
       const params = [];
       if (flags.hasApplicableFor && scopedApplicableFor) {
         params.push(scopedApplicableFor);
@@ -630,8 +670,10 @@ const createLeaveApplication = async (req, res) => {
         }
       }
 
+      const ltFlags = await getLeaveTypeSchemaFlags();
       const typeResult = await client.query(
-        `SELECT id, leave_type, max_days, applicable_for, is_active${flags.hasRequiresMedicalCertificate ? ', requires_medical_certificate' : ''}
+        `SELECT id, leave_type, max_days, applicable_for,
+                ${ltFlags.hasIsActive ? 'is_active' : 'true AS is_active'}${ltFlags.hasRequiresMedicalCertificate ? ', requires_medical_certificate' : ''}
          FROM leave_types
          WHERE id = $1
          FOR UPDATE`,
@@ -643,7 +685,7 @@ const createLeaveApplication = async (req, res) => {
         throw err;
       }
       const leaveType = typeResult.rows[0];
-      if (!leaveType.is_active) {
+      if (ltFlags.hasIsActive && !leaveType.is_active) {
         const err = new Error('Selected leave type is inactive');
         err.statusCode = 400;
         throw err;
@@ -963,10 +1005,11 @@ const updateLeaveApplicationStatus = async (req, res) => {
         }
       }
       if (Number.isFinite(leaveTypeId) && leaveTypeId > 0 && totalDays > 0) {
+        const ltFlags = await getLeaveTypeSchemaFlags();
         const leaveTypeRes = await query(
           `SELECT max_days
            FROM leave_types
-           WHERE id = $1 AND COALESCE(is_active, true) = true
+           WHERE id = $1 AND ${leaveTypeActiveWhere(ltFlags)}
            LIMIT 1`,
           [leaveTypeId]
         );
@@ -1313,8 +1356,9 @@ const getMyLeaveApplications = async (req, res) => {
     // Fallback: if no student by user_id, try matching user email/phone to student (when user_id not set).
     // Skip for staff-linked logins so office users never inherit a student's leave list by contact match.
     if (flags.hasStudentId && result.rows.length === 0 && !isLinkedStaffAccount) {
+      const userActiveSql = await buildTableActiveSql('users');
       const userRow = await query(
-        'SELECT email, phone FROM users WHERE id = $1 AND COALESCE(is_active, true) = true AND deleted_at IS NULL',
+        `SELECT email, phone FROM users WHERE id = $1 AND ${userActiveSql}`,
         [userId]
       );
       if (userRow.rows.length > 0) {
@@ -1322,6 +1366,7 @@ const getMyLeaveApplications = async (req, res) => {
         const userEmail = (u.email || '').toString().trim().toLowerCase();
         const userPhone = (u.phone || '').toString().trim();
         if (userEmail || userPhone) {
+          const guardianActiveSql = await buildTableActiveSql('guardians', 'gx');
           result = await query(
             `SELECT la.*, lt.leave_type AS leave_type_name,
               u.first_name AS applicant_first_name, u.last_name AS applicant_last_name,
@@ -1339,7 +1384,7 @@ const getMyLeaveApplications = async (req, res) => {
                    SELECT 1 FROM guardians gx
                    INNER JOIN student_guardian_links sgl ON sgl.guardian_id = gx.id
                    INNER JOIN users ux ON ux.id = gx.user_id
-                   WHERE sgl.student_id = st.id AND COALESCE(gx.is_active, true) = true
+                   WHERE sgl.student_id = st.id AND ${guardianActiveSql}
                      AND (
                        (LOWER(TRIM(COALESCE(ux.email, ''))) = $2 AND $2 != '')
                        OR (TRIM(COALESCE(ux.phone, '')) = $3 AND $3 != '')
@@ -1432,60 +1477,187 @@ const getMyLeaveApplications = async (req, res) => {
   }
 };
 
+function categorizeLeaveTypeForDashboard(leaveTypeName) {
+  const n = String(leaveTypeName || '').trim().toLowerCase();
+  if (!n) return null;
+  if (n.includes('medical') || n.includes('sick')) return 'medical';
+  if (n.includes('casual')) return 'casual';
+  return null;
+}
+
+function getCalendarYearBounds(refDate = new Date()) {
+  const year = refDate.getFullYear();
+  return { yearStart: `${year}-01-01`, yearEnd: `${year}-12-31` };
+}
+
+/** Resolve student IDs a parent may view (same rules as parent-children list). */
+async function resolveParentChildrenStudentIds(req) {
+  const userId = req.user?.id;
+  if (!userId) {
+    return { error: { status: 401, message: 'Not authenticated' } };
+  }
+  const requestedStudentId = req.query.student_id ? parseInt(req.query.student_id, 10) : null;
+  const parentFlags = await getLeaveAppSchemaFlags();
+  if (!parentFlags.hasStudentId) {
+    return { studentIds: [] };
+  }
+  let studentIds = [];
+  try {
+    const { studentIds: rawIds } = await getParentsForUser(userId);
+    studentIds = [...new Set(rawIds)].filter(Boolean);
+  } catch (err) {
+    console.error('resolveParentChildrenStudentIds: getParentsForUser failed', err);
+    return { studentIds: [] };
+  }
+  if (studentIds.length === 0) {
+    return { studentIds: [] };
+  }
+  let scopedStudentIds = studentIds;
+  if (requestedStudentId && !Number.isNaN(requestedStudentId)) {
+    const linkedIds = await resolveLinkedStudentIds(requestedStudentId);
+    const linkedSet = new Set(
+      (linkedIds.length > 0 ? linkedIds : [requestedStudentId])
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0)
+    );
+    const canViewRequested =
+      studentIds.includes(requestedStudentId) ||
+      studentIds.some((sid) => linkedSet.has(Number(sid)));
+    if (!canViewRequested) {
+      return { error: { status: 403, message: 'Access denied for requested student' } };
+    }
+    scopedStudentIds = Array.from(linkedSet);
+  }
+  return { studentIds: scopedStudentIds };
+}
+
+const APPROVED_LEAVE_STATUS_SQL = `LOWER(TRIM(COALESCE(la.status, ''))) IN ('approved', 'accept', 'accepted')`;
+
+const LEAVE_DAY_EXPR = `COALESCE(
+  NULLIF(la.total_days, 0),
+  CASE
+    WHEN la.start_date IS NOT NULL AND la.end_date IS NOT NULL
+      THEN GREATEST(1, (la.end_date::date - la.start_date::date) + 1)
+    ELSE 0
+  END
+)`;
+
+/** Approved leave-day totals per dashboard category for parent's linked student(s). */
+const getParentChildrenLeaveSummary = async (req, res) => {
+  try {
+    const scope = await resolveParentChildrenStudentIds(req);
+    if (scope.error) {
+      return res.status(scope.error.status).json({
+        status: 'ERROR',
+        message: scope.error.message,
+      });
+    }
+    const studentIds = scope.studentIds || [];
+    const emptySummary = {
+      medical: { used: 0, limit: 0, available: 0 },
+      casual: { used: 0, limit: 0, available: 0 },
+    };
+    if (studentIds.length === 0) {
+      return res.status(200).json({
+        status: 'SUCCESS',
+        message: 'Leave summary fetched successfully',
+        data: emptySummary,
+      });
+    }
+
+    const ltFlags = await getLeaveTypeSchemaFlags();
+    const applicableForSql = ltFlags.hasApplicableFor
+      ? `(COALESCE(NULLIF(LOWER(TRIM(COALESCE(applicable_for, ''))), ''), 'both') IN ('student', 'both'))`
+      : 'TRUE';
+    const typesResult = await query(
+      `SELECT id, leave_type, max_days
+       FROM leave_types
+       WHERE ${leaveTypeActiveWhere(ltFlags)}
+         AND ${applicableForSql}
+       ORDER BY leave_type`,
+      []
+    );
+
+    const categoryTypeIds = { medical: [], casual: [] };
+    const categoryLimits = { medical: 0, casual: 0 };
+    for (const row of typesResult.rows || []) {
+      const category = categorizeLeaveTypeForDashboard(row.leave_type);
+      if (!category) continue;
+      const typeId = Number(row.id);
+      if (!Number.isFinite(typeId) || typeId <= 0) continue;
+      categoryTypeIds[category].push(typeId);
+      const maxDays = Number(row.max_days);
+      if (Number.isFinite(maxDays) && maxDays > 0) {
+        categoryLimits[category] += maxDays;
+      }
+    }
+
+    const { yearStart, yearEnd } = getCalendarYearBounds();
+    const studentPlaceholders = studentIds.map((_, i) => `$${i + 1}`).join(', ');
+    const summary = { ...emptySummary };
+
+    for (const category of ['medical', 'casual']) {
+      const typeIds = categoryTypeIds[category];
+      const limit = categoryLimits[category];
+      let used = 0;
+      if (typeIds.length > 0) {
+        const typeOffset = studentIds.length;
+        const typePlaceholders = typeIds.map((_, i) => `$${typeOffset + i + 1}`).join(', ');
+        const yearStartIdx = typeOffset + typeIds.length + 1;
+        const yearEndIdx = yearStartIdx + 1;
+        const usedResult = await query(
+          `SELECT COALESCE(SUM(${LEAVE_DAY_EXPR}), 0)::int AS used_days
+           FROM leave_applications la
+           WHERE la.student_id IN (${studentPlaceholders})
+             AND la.leave_type_id IN (${typePlaceholders})
+             AND ${APPROVED_LEAVE_STATUS_SQL}
+             AND la.start_date IS NOT NULL
+             AND la.end_date IS NOT NULL
+             AND la.start_date <= $${yearEndIdx}::date
+             AND la.end_date >= $${yearStartIdx}::date`,
+          [...studentIds, ...typeIds, yearStart, yearEnd]
+        );
+        used = Number(usedResult.rows[0]?.used_days || 0);
+      }
+      const available = limit > 0 ? Math.max(limit - used, 0) : 0;
+      summary[category] = { used, limit, available };
+    }
+
+    return res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Leave summary fetched successfully',
+      data: summary,
+    });
+  } catch (error) {
+    console.error('Error fetching parent children leave summary:', error);
+    return res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to fetch leave summary',
+    });
+  }
+};
+
 // Get leave applications for parent's children (students linked via parents table).
 // Used on Parent Dashboard - uses parentUserMatch (username+@email.com, then email, then phone).
 const getParentChildrenLeaves = async (req, res) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({
+    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
+    const scope = await resolveParentChildrenStudentIds(req);
+    if (scope.error) {
+      return res.status(scope.error.status).json({
         status: 'ERROR',
-        message: 'Not authenticated'
+        message: scope.error.message,
       });
     }
-    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
-    const requestedStudentId = req.query.student_id ? parseInt(req.query.student_id, 10) : null;
-
+    const scopedStudentIds = scope.studentIds || [];
     const parentFlags = await getLeaveAppSchemaFlags();
-    if (!parentFlags.hasStudentId) {
+    if (!parentFlags.hasStudentId || scopedStudentIds.length === 0) {
       return res.status(200).json({
         status: 'SUCCESS',
         message: 'Leave applications fetched successfully',
         data: [],
         count: 0,
       });
-    }
-
-    let studentIds = [];
-    try {
-      const { studentIds: rawIds } = await getParentsForUser(userId);
-      studentIds = [...new Set(rawIds)].filter(Boolean);
-    } catch (err) {
-      console.error('getParentChildrenLeaves: getParentsForUser failed', err);
-      return res.status(200).json({ status: 'SUCCESS', message: 'Leave applications fetched successfully', data: [], count: 0 });
-    }
-    if (studentIds.length === 0) {
-      return res.status(200).json({ status: 'SUCCESS', message: 'Leave applications fetched successfully', data: [], count: 0 });
-    }
-
-    let scopedStudentIds = studentIds;
-    if (requestedStudentId && !Number.isNaN(requestedStudentId)) {
-      const linkedIds = await resolveLinkedStudentIds(requestedStudentId);
-      const linkedSet = new Set(
-        (linkedIds.length > 0 ? linkedIds : [requestedStudentId])
-          .map((id) => Number(id))
-          .filter((id) => Number.isFinite(id) && id > 0)
-      );
-      const canViewRequested =
-        studentIds.includes(requestedStudentId) ||
-        studentIds.some((sid) => linkedSet.has(Number(sid)));
-      if (!canViewRequested) {
-        return res.status(403).json({
-          status: 'ERROR',
-          message: 'Access denied for requested student',
-        });
-      }
-      scopedStudentIds = Array.from(linkedSet);
     }
 
     const placeholders = scopedStudentIds.map((_, i) => `$${i + 1}`).join(', ');
@@ -1549,16 +1721,21 @@ const getGuardianWardLeaves = async (req, res) => {
       });
     }
 
-    const userResult = await query('SELECT id FROM users WHERE id = $1 AND COALESCE(is_active, true) = true AND deleted_at IS NULL', [userId]);
+    const userActiveSql = await buildTableActiveSql('users');
+    const userResult = await query(
+      `SELECT id FROM users WHERE id = $1 AND ${userActiveSql}`,
+      [userId]
+    );
     if (userResult.rows.length === 0) {
       return res.status(200).json({ status: 'SUCCESS', message: 'Leave applications fetched successfully', data: [], count: 0 });
     }
+    const guardianActiveSql = await buildTableActiveSql('guardians', 'g');
     const guardianResult = await query(
       `SELECT sgl.student_id
        FROM guardians g
        INNER JOIN student_guardian_links sgl ON sgl.guardian_id = g.id
        INNER JOIN students s ON s.id = sgl.student_id AND s.status = 'Active'
-       WHERE g.user_id = $1 AND COALESCE(g.is_active, true) = true`,
+       WHERE g.user_id = $1 AND ${guardianActiveSql}`,
       [userId]
     );
     const studentIds = guardianResult.rows.map(r => r.student_id).filter(Boolean);
@@ -2253,5 +2430,6 @@ module.exports = {
   getLeaveApplications,
   getMyLeaveApplications,
   getParentChildrenLeaves,
+  getParentChildrenLeaveSummary,
   getGuardianWardLeaves,
 };

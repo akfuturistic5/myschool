@@ -162,6 +162,19 @@
     margin: 20mm;
   }
 
+  html,
+  body {
+    background: #ffffff !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide form/actions without affecting certificate layout */
+  .bonafide-page .no-print {
+    display: none !important;
+  }
+
   body * {
     visibility: hidden !important;
   }
@@ -185,8 +198,25 @@
     border-radius: 0 !important;
     box-shadow: none !important;
     width: 100% !important;
-    min-height: auto !important;
+    /* Match A4 printable height so flex footer spacing equals screen/PDF preview */
+    min-height: calc(297mm - 40mm) !important;
     aspect-ratio: auto !important;
     padding: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    page-break-inside: avoid;
+  }
+
+  .bonafide-bottom-section {
+    margin-top: auto !important;
+    padding-top: 40px !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .bonafide-footer,
+  .bonafide-seal-wrap {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
 }

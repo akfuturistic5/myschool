@@ -2171,6 +2171,13 @@ class ApiService {
     return this.makeRequest(`/leave-applications/parent-children${qs ? `?${qs}` : ''}`);
   }
 
+  async getParentChildrenLeaveSummary(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.student_id != null) searchParams.set('student_id', params.student_id);
+    const qs = searchParams.toString();
+    return this.makeRequest(`/leave-applications/parent-children/summary${qs ? `?${qs}` : ''}`);
+  }
+
   async getGuardianWardLeaves(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.limit != null) searchParams.set('limit', params.limit);

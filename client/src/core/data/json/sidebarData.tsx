@@ -395,12 +395,13 @@ export const SidebarData = [
           { label: "Categories", link: routes.accountCategories },
           { label: "Expenses", link: routes.expense },
           { label: "Income", link: routes.accountsIncome },
-          {
-            label: "Invoices",
-            link: routes.accountsInvoices,
-            subLink1: routes.addInvoice,
-            subLink2: routes.editInvoice,
-          },
+          // Invoices — temporarily hidden from menu (re-enable when ready)
+          // {
+          //   label: "Invoices",
+          //   link: routes.accountsInvoices,
+          //   subLink1: routes.addInvoice,
+          //   subLink2: routes.editInvoice,
+          // },
           { label: "Transactions", link: routes.accountsTransactions },
         ],
       },

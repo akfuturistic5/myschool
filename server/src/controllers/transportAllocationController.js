@@ -42,16 +42,44 @@ function parseIsoDateOnly(value, { fieldName, allowNull = true } = {}) {
   return stringValue;
 }
 
+/** Cached per table: active-row filter aligned with staffController / tenant schema (status vs is_active). */
+const subjectActiveSqlCache = new Map();
+
+async function buildSubjectActiveSql(tableName) {
+  const table = String(tableName || '').trim().toLowerCase();
+  if (!['students', 'staff'].includes(table)) return 'TRUE';
+  if (subjectActiveSqlCache.has(table)) return subjectActiveSqlCache.get(table);
+
+  const hasIsActive = await hasColumn(table, 'is_active');
+  const hasStatus = await hasColumn(table, 'status');
+  const hasDeletedAt = await hasColumn(table, 'deleted_at');
+
+  const parts = [];
+  if (hasIsActive) {
+    parts.push('COALESCE(is_active, true) = true');
+  } else if (hasStatus) {
+    parts.push(`LOWER(TRIM(COALESCE(NULLIF(TRIM(status), ''), 'Active'))) = 'active'`);
+  }
+  if (hasDeletedAt) {
+    parts.push('deleted_at IS NULL');
+  }
+
+  const sql = parts.length ? parts.join(' AND ') : 'TRUE';
+  subjectActiveSqlCache.set(table, sql);
+  return sql;
+}
+
 async function resolveAllocationSubjectId(client, rawId, userType) {
   if (!Number.isFinite(Number(rawId))) {
     throw new Error('INVALID_NUMERIC_INPUT');
   }
   const parsedId = Number(rawId);
   if (userType === 'student') {
+    const activeSql = await buildSubjectActiveSql('students');
     const studentResult = await client.query(
       `SELECT id
        FROM students
-       WHERE COALESCE(is_active, true) = true
+       WHERE ${activeSql}
          AND (id = $1 OR user_id = $1)
        ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END
        LIMIT 1`,
@@ -61,10 +89,11 @@ async function resolveAllocationSubjectId(client, rawId, userType) {
     return Number(studentResult.rows[0].id);
   }
   if (userType === 'staff') {
+    const activeSql = await buildSubjectActiveSql('staff');
     const staffResult = await client.query(
       `SELECT id
        FROM staff
-       WHERE COALESCE(is_active, true) = true
+       WHERE ${activeSql}
          AND (id = $1 OR user_id = $1)
        ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END
        LIMIT 1`,

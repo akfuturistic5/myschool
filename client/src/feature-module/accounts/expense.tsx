@@ -35,6 +35,7 @@ function mapExpenseApiToRow(r: any) {
     amount: formatUsdDisplay(r.amount),
     invoiceNo: r.invoice_no ?? "",
     paymentMethod: r.payment_method ?? "",
+    status: r.status === "Pending" ? "Pending" : "Completed",
   };
 }
 
@@ -189,6 +190,7 @@ const Expense = () => {
     { key: "amount", header: "Amount" },
     { key: "invoice_no", header: "Invoice No" },
     { key: "payment_method", header: "Payment Method" },
+    { key: "status", header: "Status" },
   ];
 
   const runExportExcel = async () => {
@@ -204,6 +206,7 @@ const Expense = () => {
       amount: r.amount ?? "",
       invoice_no: r.invoice_no ?? "",
       payment_method: r.payment_method ?? "",
+      status: r.status === "Pending" ? "Pending" : "Completed",
     }));
     exportAccountsExcel(flat, expenseExportColumns, "expenses");
   };
@@ -221,6 +224,7 @@ const Expense = () => {
       amount: r.amount ?? "",
       invoice_no: r.invoice_no ?? "",
       payment_method: r.payment_method ?? "",
+      status: r.status === "Pending" ? "Pending" : "Completed",
     }));
     exportAccountsPdf(flat, expenseExportColumns, "expenses", "Expenses");
   };
@@ -238,6 +242,7 @@ const Expense = () => {
       amount: r.amount ?? "",
       invoice_no: r.invoice_no ?? "",
       payment_method: r.payment_method ?? "",
+      status: r.status === "Pending" ? "Pending" : "Completed",
     }));
     printAccountsData("Expenses", expenseExportColumns, flat);
   };
@@ -365,32 +370,25 @@ const Expense = () => {
         sortOrder: sortOrderFor("payment_method"),
       },
       {
-        title: "Attachment",
-        dataIndex: "attachment",
-        key: "attachment",
-        render: (_: any, record: any) => {
-          const filePath = record.raw?.file_path;
-          const fileName = record.raw?.document_name || "Download";
-          if (!filePath) return <span className="text-muted">-</span>;
-
-          const url = filePath.startsWith("http")
-            ? filePath
-            : filePath.startsWith("school_")
-            ? `/api/storage/files/${filePath}`
-            : `/api/storage/files/${filePath}`;
-
-          return (
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="badge badge-soft-info d-inline-flex align-items-center gap-1"
-            >
-              <i className="ti ti-paperclip fs-12" />
-              {fileName.length > 20 ? fileName.slice(0, 17) + "..." : fileName}
-            </a>
-          );
-        },
+        title: "Status",
+        dataIndex: "status",
+        key: "status",
+        sorter: true,
+        sortOrder: sortOrderFor("status"),
+        render: (status: string) => (
+          <span
+            className={`badge d-inline-flex align-items-center ${
+              status === "Completed"
+                ? "badge-soft-success"
+                : status === "Pending"
+                  ? "badge-soft-warning"
+                  : "badge-soft-secondary"
+            }`}
+          >
+            <i className="ti ti-circle-filled fs-5 me-1" />
+            {status}
+          </span>
+        ),
       },
       {
         title: "Action",
