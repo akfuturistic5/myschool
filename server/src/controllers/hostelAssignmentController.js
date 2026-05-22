@@ -7,7 +7,7 @@ const pickUserGenderForStudent = async (studentId) => {
     SELECT u.gender
     FROM students s
     JOIN users u ON u.id = s.user_id
-    WHERE s.id = $1 AND s.is_active = true
+    WHERE s.id = $1 AND s.status = 'Active'
     LIMIT 1
     `,
     [studentId]

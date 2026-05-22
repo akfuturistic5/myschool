@@ -66,7 +66,7 @@ const createGuardian = async (req, res) => {
       }
 
       const studentCheck = await client.query(
-        'SELECT id FROM students WHERE id = $1 AND is_active = true LIMIT 1',
+        "SELECT id FROM students WHERE id = $1 AND status = 'Active' LIMIT 1",
         [student_id]
       );
       if (studentCheck.rows.length === 0) {
@@ -380,7 +380,7 @@ const getAllGuardians = async (req, res) => {
     const result = await query(
       `SELECT ${guardianSelectBase}
       ${guardianJoins}
-      WHERE s.is_active = true ${scopingSql}${yearWhere}
+      WHERE s.status = 'Active' ${scopingSql}${yearWhere}
         AND LOWER(COALESCE(sgl.relation::text, '')) NOT IN ('father', 'mother')
       ORDER BY student_u.first_name ASC, student_u.last_name ASC`,
       listParams
@@ -451,7 +451,7 @@ const getGuardianById = async (req, res) => {
     const result = await query(
       `SELECT ${guardianSelectBase}
       ${guardianJoins}
-      WHERE g.id = $1 AND s.is_active = true`,
+      WHERE g.id = $1 AND s.status = 'Active'`,
       [gid]
     );
 
@@ -506,7 +506,7 @@ const getCurrentGuardian = async (req, res) => {
     const result = await query(
       `SELECT ${guardianSelectBase}
       ${guardianJoins}
-      WHERE g.user_id = $1 AND (s.is_active IS NULL OR s.is_active = true)
+      WHERE g.user_id = $1 AND (s.status IS NULL OR s.status = 'Active')
       ORDER BY sgl.is_primary_contact DESC, student_u.first_name ASC NULLS LAST, student_u.last_name ASC NULLS LAST`,
       [userId]
     );
@@ -541,7 +541,7 @@ const getGuardianByStudentId = async (req, res) => {
     const result = await query(
       `SELECT ${guardianSelectBase}
       ${guardianJoins}
-      WHERE sgl.student_id = $1 AND s.is_active = true
+      WHERE sgl.student_id = $1 AND s.status = 'Active'
       ORDER BY sgl.is_primary_contact DESC, g.updated_at DESC, g.id DESC`,
       [studentId]
     );

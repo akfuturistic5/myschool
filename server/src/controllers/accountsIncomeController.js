@@ -8,6 +8,7 @@ const {
   mapLedgerToIncome,
   LEDGER_FROM,
 } = require('../utils/accountsFinancialLedger');
+const { getStorageProvider } = require('../storage');
 
 const TX_TYPE = 'Income';
 
@@ -73,7 +74,7 @@ const listIncome = async (req, res) => {
     const limIdx = dataParams.length - 1;
     const offIdx = dataParams.length;
     const r = await query(
-      `SELECT fl.*, cat.category_name
+      `SELECT fl.*, cat.category_name, fd.document_name, fd.file_path, fd.file_size, fd.file_type
        ${LEDGER_FROM}
        ${where}
        ${orderSql}
@@ -101,7 +102,7 @@ const getIncome = async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid id' });
     }
     const r = await query(
-      `SELECT fl.*, cat.category_name
+      `SELECT fl.*, cat.category_name, fd.document_name, fd.file_path, fd.file_size, fd.file_type
        ${LEDGER_FROM}
        WHERE fl.id = $1 AND fl.deleted_at IS NULL AND fl.transaction_type = $2`,
       [id, TX_TYPE]
@@ -117,7 +118,14 @@ const getIncome = async (req, res) => {
 };
 
 const createIncome = async (req, res) => {
+  let uploadedFileKey = null;
   try {
+    const schoolId = req.user?.school_id;
+    if (!schoolId) {
+      return res.status(400).json({ status: 'ERROR', message: 'School context is required' });
+    }
+    const userId = req.user?.id;
+
     const yearId = await resolveRequiredAcademicYearId(req.body, await resolveAcademicYearIdFromQuery(req));
     if (!Number.isFinite(yearId)) {
       return res.status(400).json({ status: 'ERROR', message: 'academic_year_id is required' });
@@ -130,6 +138,12 @@ const createIncome = async (req, res) => {
     const category_id = parseInt(req.body.category_id, 10);
     if (!Number.isFinite(category_id)) {
       return res.status(400).json({ status: 'ERROR', message: 'category_id is required' });
+    }
+
+    const storage = getStorageProvider();
+    if (req.file) {
+      const uploadResult = await storage.upload(req.file, schoolId, 'documents/accounts/income');
+      uploadedFileKey = uploadResult.relativePath;
     }
 
     const row = await executeTransaction(async (client) => {
@@ -156,11 +170,46 @@ const createIncome = async (req, res) => {
           'Completed',
         ]
       );
-      return ins.rows[0];
+      const ledger = ins.rows[0];
+
+      if (req.file && uploadedFileKey) {
+        await client.query(
+          `INSERT INTO financial_documents (
+             ledger_id, document_name, file_path, file_size, file_type, uploaded_by,
+             created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+          [
+            ledger.id,
+            req.file.originalname,
+            uploadedFileKey,
+            req.file.size,
+            req.file.mimetype,
+            userId || null,
+          ]
+        );
+      }
+
+      return ledger;
     });
 
-    res.status(201).json({ status: 'SUCCESS', message: 'Income created', data: mapLedgerToIncome(row) });
+    const r = await query(
+      `SELECT fl.*, cat.category_name, fd.document_name, fd.file_path, fd.file_size, fd.file_type
+       ${LEDGER_FROM}
+       WHERE fl.id = $1 AND fl.deleted_at IS NULL`,
+      [row.id]
+    );
+
+    res.status(201).json({ status: 'SUCCESS', message: 'Income created', data: mapLedgerToIncome(r.rows[0]) });
   } catch (e) {
+    if (uploadedFileKey) {
+      try {
+        const storage = getStorageProvider();
+        await storage.delete(uploadedFileKey);
+      } catch (err) {
+        console.error('Failed to cleanup uploaded file on error', err);
+      }
+    }
+
     if (e.code === 'CATEGORY_NOT_FOUND') {
       return res.status(400).json({ status: 'ERROR', message: 'Category does not exist' });
     }
@@ -179,11 +228,17 @@ const createIncome = async (req, res) => {
 };
 
 const updateIncome = async (req, res) => {
+  let uploadedFileKey = null;
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id)) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid id' });
     }
+    const schoolId = req.user?.school_id;
+    if (!schoolId) {
+      return res.status(400).json({ status: 'ERROR', message: 'School context is required' });
+    }
+    const userId = req.user?.id;
 
     const existing = await query(
       `SELECT * FROM financial_ledger WHERE id = $1 AND deleted_at IS NULL AND transaction_type = $2`,
@@ -235,6 +290,14 @@ const updateIncome = async (req, res) => {
           : null
         : cur.category_id;
 
+    const storage = getStorageProvider();
+    if (req.file) {
+      const uploadResult = await storage.upload(req.file, schoolId, 'documents/accounts/income');
+      uploadedFileKey = uploadResult.relativePath;
+    }
+
+    const removeDoc = req.body.remove_document === true || req.body.remove_document === 'true';
+
     await executeTransaction(async (client) => {
       if (Number.isFinite(category_id)) {
         await assertCategoryUsable(client, category_id, academic_year_id, 'Income');
@@ -267,16 +330,52 @@ const updateIncome = async (req, res) => {
           TX_TYPE,
         ]
       );
+
+      if (req.file || removeDoc) {
+        // Soft delete old active documents
+        await client.query(
+          `UPDATE financial_documents
+           SET deleted_at = NOW(), updated_at = NOW()
+           WHERE ledger_id = $1 AND deleted_at IS NULL`,
+          [id]
+        );
+      }
+
+      if (req.file && uploadedFileKey) {
+        await client.query(
+          `INSERT INTO financial_documents (
+             ledger_id, document_name, file_path, file_size, file_type, uploaded_by,
+             created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+          [
+            id,
+            req.file.originalname,
+            uploadedFileKey,
+            req.file.size,
+            req.file.mimetype,
+            userId || null,
+          ]
+        );
+      }
     });
 
     const r = await query(
-      `SELECT fl.*, cat.category_name
+      `SELECT fl.*, cat.category_name, fd.document_name, fd.file_path, fd.file_size, fd.file_type
        ${LEDGER_FROM}
        WHERE fl.id = $1 AND fl.deleted_at IS NULL`,
       [id]
     );
     res.status(200).json({ status: 'SUCCESS', message: 'Income updated', data: mapLedgerToIncome(r.rows[0]) });
   } catch (e) {
+    if (uploadedFileKey) {
+      try {
+        const storage = getStorageProvider();
+        await storage.delete(uploadedFileKey);
+      } catch (err) {
+        console.error('Failed to cleanup uploaded file on error', err);
+      }
+    }
+
     if (e.code === 'CATEGORY_NOT_FOUND') {
       return res.status(400).json({ status: 'ERROR', message: 'Category does not exist' });
     }
@@ -300,14 +399,28 @@ const deleteIncome = async (req, res) => {
     if (!Number.isFinite(id)) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid id' });
     }
-    const del = await query(
-      `UPDATE financial_ledger
-       SET deleted_at = NOW(), updated_at = NOW()
-       WHERE id = $1 AND deleted_at IS NULL AND transaction_type = $2
-       RETURNING id`,
-      [id, TX_TYPE]
-    );
-    if (del.rows.length === 0) {
+
+    const result = await executeTransaction(async (client) => {
+      const del = await client.query(
+        `UPDATE financial_ledger
+         SET deleted_at = NOW(), updated_at = NOW()
+         WHERE id = $1 AND deleted_at IS NULL AND transaction_type = $2
+         RETURNING id`,
+        [id, TX_TYPE]
+      );
+      
+      if (del.rows.length > 0) {
+        await client.query(
+          `UPDATE financial_documents
+           SET deleted_at = NOW(), updated_at = NOW()
+           WHERE ledger_id = $1 AND deleted_at IS NULL`,
+          [id]
+        );
+      }
+      return del.rows;
+    });
+
+    if (result.length === 0) {
       return res.status(404).json({ status: 'ERROR', message: 'Income record not found' });
     }
     res.status(200).json({ status: 'SUCCESS', message: 'Income deleted', data: { id } });

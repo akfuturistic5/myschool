@@ -52,13 +52,23 @@ const {
 } = require('../controllers/accountsExpenseController');
 
 const router = express.Router();
+const { upload } = require('../middleware/schoolStorageUpload');
+
+const parseDocument = (req, res, next) => {
+  upload.single('document')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ status: 'ERROR', message: err.message || 'Upload failed' });
+    }
+    next();
+  });
+};
 
 const WRITE = ACCOUNTS_MANAGER_ROLES;
 
 router.get('/income', requireRole(ALL_AUTHENTICATED_ROLES), listIncome);
 router.get('/income/:id', requireRole(ALL_AUTHENTICATED_ROLES), getIncome);
-router.post('/income', requireRole(WRITE), validate(createIncomeSchema), createIncome);
-router.put('/income/:id', requireRole(WRITE), validate(updateIncomeSchema), updateIncome);
+router.post('/income', requireRole(WRITE), parseDocument, validate(createIncomeSchema), createIncome);
+router.put('/income/:id', requireRole(WRITE), parseDocument, validate(updateIncomeSchema), updateIncome);
 router.delete('/income/:id', requireRole(WRITE), deleteIncome);
 
 router.get('/invoices', requireRole(ALL_AUTHENTICATED_ROLES), listInvoices);
@@ -84,8 +94,8 @@ router.delete('/expense-categories/:id', requireRole(WRITE), deleteCategory);
 
 router.get('/expenses', requireRole(ALL_AUTHENTICATED_ROLES), listExpenses);
 router.get('/expenses/:id', requireRole(ALL_AUTHENTICATED_ROLES), getExpense);
-router.post('/expenses', requireRole(WRITE), validate(createExpenseSchema), createExpense);
-router.put('/expenses/:id', requireRole(WRITE), validate(updateExpenseSchema), updateExpense);
+router.post('/expenses', requireRole(WRITE), parseDocument, validate(createExpenseSchema), createExpense);
+router.put('/expenses/:id', requireRole(WRITE), parseDocument, validate(updateExpenseSchema), updateExpense);
 router.delete('/expenses/:id', requireRole(WRITE), deleteExpense);
 
 module.exports = router;

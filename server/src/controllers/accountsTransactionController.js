@@ -77,7 +77,7 @@ const listTransactions = async (req, res) => {
     const limIdx = dataParams.length - 1;
     const offIdx = dataParams.length;
     const r = await query(
-      `SELECT fl.*, cat.category_name
+      `SELECT fl.*, cat.category_name, fd.document_name, fd.file_path, fd.file_size, fd.file_type
        ${LEDGER_FROM}
        ${where}
        ${orderSql}
@@ -105,7 +105,7 @@ const getTransaction = async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid id' });
     }
     const r = await query(
-      `SELECT fl.*, cat.category_name
+      `SELECT fl.*, cat.category_name, fd.document_name, fd.file_path, fd.file_size, fd.file_type
        ${LEDGER_FROM}
        WHERE fl.id = $1 AND fl.deleted_at IS NULL`,
       [id]
