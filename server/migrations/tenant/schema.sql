@@ -1401,100 +1401,186 @@ CREATE TABLE IF NOT EXISTS public.homework (
     class_id integer NOT NULL REFERENCES public.classes(id) ON DELETE RESTRICT,
     class_section_id integer NOT NULL REFERENCES public.class_sections(id) ON DELETE RESTRICT,
     class_subject_id integer NOT NULL REFERENCES public.class_subjects(id) ON DELETE RESTRICT,
-    
+
     -- TEACHER INTEGRITY LOCK
     teacher_id integer NOT NULL REFERENCES public.staff(id) ON DELETE RESTRICT,
     teacher_assignment_id integer NOT NULL,
-    
+
     title character varying(200) NOT NULL,
     description text,
+    instructions text,
+
+    homework_type character varying(30) DEFAULT 'Homework',
     assign_date date NOT NULL DEFAULT CURRENT_DATE,
     due_date date NOT NULL,
-    
+
+    publish_at TIMESTAMPTZ,
+    visible_until TIMESTAMPTZ,
+
     -- Teacher Policies
     resubmission_allowed boolean DEFAULT true,
+    allow_late_submission boolean DEFAULT true,
     max_attempts integer DEFAULT 1,
-    
-    max_marks numeric(5,2) DEFAULT 0.00,
-    attachment_url character varying(500),
-    
+
+    is_graded boolean DEFAULT true,
+    max_marks numeric(5,2),
+
+    status character varying(20) DEFAULT 'Published',
+
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     created_by integer,
     updated_by integer,
-    
+    deleted_at TIMESTAMPTZ,
+
     CONSTRAINT chk_homework_dates CHECK (due_date >= assign_date),
-    
-    -- TRIPLE-KEY CONTEXT LOCK (Ensures the homework exists within a valid class/section/subject context)
-    CONSTRAINT fk_homework_class_section 
-        FOREIGN KEY (class_section_id, class_id, academic_year_id) 
+    CONSTRAINT chk_homework_status CHECK (
+        status IN ('Draft', 'Published', 'Closed', 'Archived')
+    ),
+    CONSTRAINT chk_homework_type CHECK (
+        homework_type IN (
+            'Homework', 'Assignment', 'Project', 'Worksheet',
+            'Practical', 'Reading', 'Activity'
+        )
+    ),
+    CONSTRAINT chk_homework_max_attempts CHECK (max_attempts >= 1),
+
+    -- TRIPLE-KEY CONTEXT LOCK
+    CONSTRAINT fk_homework_class_section
+        FOREIGN KEY (class_section_id, class_id, academic_year_id)
         REFERENCES public.class_sections(id, class_id, academic_year_id),
-        
+
     CONSTRAINT fk_homework_class_subject
-        FOREIGN KEY (class_subject_id, class_id, academic_year_id) 
+        FOREIGN KEY (class_subject_id, class_id, academic_year_id)
         REFERENCES public.class_subjects(id, class_id, academic_year_id),
-        
+
     CONSTRAINT fk_homework_teacher_assignment
         FOREIGN KEY (teacher_assignment_id, teacher_id, class_section_id, class_subject_id, academic_year_id)
         REFERENCES public.subject_teacher_assignments (id, staff_id, class_section_id, class_subject_id, academic_year_id),
-        
-    -- ULTIMATE INTEGRITY ANCHOR (Used for locking submissions to the same class/year context)
+
     CONSTRAINT uq_homework_anchor UNIQUE (id, class_id, academic_year_id)
 );
 
+-- 54. Homework Attachments (Media Bridge)
+CREATE TABLE IF NOT EXISTS public.homework_attachments (
+    id SERIAL PRIMARY KEY,
+    homework_id integer NOT NULL REFERENCES public.homework(id) ON DELETE CASCADE,
+    file_name character varying(255) NOT NULL,
+    file_path text NOT NULL,
+    file_type character varying(100),
+    file_size bigint,
+    uploaded_by integer,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
 
+-- 55. Homework Recipients (Per-Student Assignment Ledger)
+CREATE TABLE IF NOT EXISTS public.homework_recipients (
+    id SERIAL PRIMARY KEY,
+    homework_id integer NOT NULL REFERENCES public.homework(id) ON DELETE CASCADE,
+    student_id integer NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
+    student_lifecycle_id integer NOT NULL,
+    academic_year_id integer NOT NULL,
+    class_id integer NOT NULL,
 
--- 54. Homework Submissions (Student Ledger)
+    status character varying(20) DEFAULT 'Assigned',
+    viewed_at TIMESTAMPTZ,
+    assigned_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+
+    CONSTRAINT chk_homework_recipient_status CHECK (
+        status IN ('Assigned', 'Viewed', 'Completed')
+    ),
+    CONSTRAINT uq_homework_student UNIQUE (homework_id, student_id),
+
+    CONSTRAINT fk_homework_recipient_lifecycle
+        FOREIGN KEY (student_lifecycle_id, student_id, academic_year_id, class_id)
+        REFERENCES public.student_lifecycle_ledger (id, student_id, to_academic_year_id, to_class_id),
+
+    CONSTRAINT fk_homework_recipient_homework_context
+        FOREIGN KEY (homework_id, class_id, academic_year_id)
+        REFERENCES public.homework (id, class_id, academic_year_id)
+);
+
+-- 56. Homework Submissions (Attempt / Version Ledger)
 CREATE TABLE IF NOT EXISTS public.homework_submissions (
     id SERIAL PRIMARY KEY,
     homework_id integer NOT NULL,
     student_id integer NOT NULL,
     student_lifecycle_id integer NOT NULL,
-    
-    -- Contextual Keys (Passed down for integrity locking)
     academic_year_id integer NOT NULL,
     class_id integer NOT NULL,
-    
+
     attempt_number integer DEFAULT 1,
-    
     submission_date TIMESTAMPTZ DEFAULT NOW(),
     submission_text text,
-    attachment_url character varying(500),
-    status character varying(20) DEFAULT 'Submitted', -- Submitted, Late, Evaluated, Resubmission Requested
-    
+
+    status character varying(30) DEFAULT 'Submitted',
+    is_late boolean DEFAULT false,
+
     marks_obtained numeric(5,2),
     teacher_feedback text,
     evaluated_by integer REFERENCES public.staff(id),
     evaluation_date TIMESTAMPTZ,
-    
+    reviewed_at TIMESTAMPTZ,
+    returned_for_correction boolean DEFAULT false,
+
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     created_by integer,
     updated_by integer,
-    
-    -- Ensure one record per student per assignment attempt
-    UNIQUE (homework_id, student_id, attempt_number),
-    
-    CONSTRAINT homework_submissions_status_check 
-        CHECK (status IN ('Submitted', 'Late', 'Evaluated', 'Resubmission Requested')),
-        
-    -- ULTIMATE INTEGRITY LOCK: Submission MUST match the Homework's Class/Year context
+    deleted_at TIMESTAMPTZ,
+
+    CONSTRAINT chk_submission_status CHECK (
+        status IN (
+            'Draft', 'Submitted', 'Late', 'Under Review',
+            'Evaluated', 'Returned', 'Resubmission Requested'
+        )
+    ),
+    CONSTRAINT chk_homework_submission_attempt CHECK (attempt_number >= 1),
+    CONSTRAINT uq_homework_attempt UNIQUE (homework_id, student_id, attempt_number),
+
     CONSTRAINT fk_submission_homework_context
         FOREIGN KEY (homework_id, class_id, academic_year_id)
         REFERENCES public.homework (id, class_id, academic_year_id),
-        
-    -- ULTIMATE INTEGRITY LOCK: Submission MUST match the Student's active Lifecycle context
+
     CONSTRAINT fk_homework_submission_lifecycle
         FOREIGN KEY (student_lifecycle_id, student_id, academic_year_id, class_id)
         REFERENCES public.student_lifecycle_ledger (id, student_id, to_academic_year_id, to_class_id)
 );
 
+-- 57. Submission Attachments (Media Bridge)
+CREATE TABLE IF NOT EXISTS public.submission_attachments (
+    id SERIAL PRIMARY KEY,
+    submission_id integer NOT NULL REFERENCES public.homework_submissions(id) ON DELETE CASCADE,
+    file_name character varying(255) NOT NULL,
+    file_path text NOT NULL,
+    file_type character varying(100),
+    file_size bigint,
+    uploaded_by integer,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
 
--- Performance Indexes
-CREATE INDEX IF NOT EXISTS idx_homework_context ON public.homework(class_section_id, class_subject_id, academic_year_id);
-CREATE INDEX IF NOT EXISTS idx_homework_due_date ON public.homework(due_date);
-CREATE INDEX IF NOT EXISTS idx_homework_submissions_student ON public.homework_submissions(student_id);
-CREATE INDEX IF NOT EXISTS idx_homework_submissions_homework ON public.homework_submissions(homework_id);
+-- Homework Performance Indexes
+CREATE INDEX IF NOT EXISTS idx_homework_context
+    ON public.homework (class_section_id, class_subject_id, academic_year_id)
+    WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_homework_due_date ON public.homework (due_date) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_homework_status ON public.homework (status) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_homework_publish ON public.homework (publish_at) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_homework_attachments_homework
+    ON public.homework_attachments (homework_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_homework_recipients_student ON public.homework_recipients (student_id);
+CREATE INDEX IF NOT EXISTS idx_homework_recipients_homework ON public.homework_recipients (homework_id);
+CREATE INDEX IF NOT EXISTS idx_homework_submissions_student
+    ON public.homework_submissions (student_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_homework_submissions_homework
+    ON public.homework_submissions (homework_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_submission_status
+    ON public.homework_submissions (status) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_submission_attachments_submission
+    ON public.submission_attachments (submission_id) WHERE deleted_at IS NULL;
 
 -- 55. Admission Enquiries (Lead Master)
 CREATE TABLE IF NOT EXISTS public.admission_enquiries (

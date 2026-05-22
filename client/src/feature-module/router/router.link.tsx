@@ -45,6 +45,7 @@ import Error500 from "../pages/error/error-500";
 import Ribbon from "antd/es/badge/Ribbon";
 import AcademicReason from "../academic/academic-reason";
 import ClassHomeWork from "../academic/class-home-work";
+import HomeworkDetailPage from "../academic/class-home-work/HomeworkDetailPage";
 import ClassRoom from "../academic/class-room";
 import ClassSection from "../academic/class-section";
 import ClassSubject from "../academic/class-subject";
@@ -164,6 +165,10 @@ import AddStudent from "../peoples/students/add-student";
 import StudentDetails from "../peoples/students/student-details/studentDetails";
 import StudentFees from "../peoples/students/student-details/studentFees";
 import StudentLeaves from "../peoples/students/student-details/studentLeaves";
+import StudentHomeworkList from "../peoples/students/student-homework";
+import StudentHomeworkDetail from "../peoples/students/student-homework/StudentHomeworkDetail";
+import ParentHomeworkList from "../peoples/parent/parent-homework";
+import ParentHomeworkDetail from "../peoples/parent/parent-homework/ParentHomeworkDetail";
 import StudentLibrary from "../peoples/students/student-details/studentLibrary";
 import StudentResult from "../peoples/students/student-details/studentResult";
 import StudentTimeTable from "../peoples/students/student-details/studentTimeTable";
@@ -841,6 +846,26 @@ export const publicRoutes = [
     route: Route,
   },
   {
+    path: routes.studentHomeworkDetail,
+    element: <StudentHomeworkDetail />,
+    route: Route,
+  },
+  {
+    path: routes.studentHomework,
+    element: <StudentHomeworkList />,
+    route: Route,
+  },
+  {
+    path: routes.parentHomeworkDetail,
+    element: <ParentHomeworkDetail />,
+    route: Route,
+  },
+  {
+    path: routes.parentHomework,
+    element: <ParentHomeworkList />,
+    route: Route,
+  },
+  {
     path: routes.studentResult,
     element: <StudentResult />,
     route: Route,
@@ -957,6 +982,11 @@ export const publicRoutes = [
   {
     path: routes.classHomeWork,
     element: <ClassHomeWork />,
+    route: Route,
+  },
+  {
+    path: routes.classHomeWorkDetail,
+    element: <HomeworkDetailPage />,
     route: Route,
   },
   {

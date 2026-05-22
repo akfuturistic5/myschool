@@ -84,6 +84,13 @@ function buildTeacherSidebar() {
           showSubRoute: false,
         },
         {
+          label: "Home Work",
+          icon: "ti ti-license",
+          link: routes.classHomeWork,
+          submenu: false,
+          showSubRoute: false,
+        },
+        {
           label: "Attendance",
           icon: "ti ti-calendar-check",
           submenu: true,
@@ -256,6 +263,13 @@ function buildStudentSidebar() {
           showSubRoute: false,
         },
         {
+          label: "Homework",
+          icon: "ti ti-notebook",
+          link: routes.studentHomework,
+          submenu: false,
+          showSubRoute: false,
+        },
+        {
           label: "Leave & Attendance",
           icon: "ti ti-calendar-share",
           link: routes.studentLeaves,
@@ -366,6 +380,13 @@ function buildParentSidebar() {
           showSubRoute: false,
         },
         {
+          label: "Homework",
+          icon: "ti ti-notebook",
+          link: routes.parentHomework,
+          submenu: false,
+          showSubRoute: false,
+        },
+        {
           label: "Leave & Attendance",
           icon: "ti ti-calendar-share",
           link: routes.studentLeaves,
@@ -429,6 +450,21 @@ function buildParentSidebar() {
       ],
     },
   ];
+}
+
+function buildGuardianSidebar(): typeof SidebarData {
+  const parentLike = buildParentSidebar() as typeof SidebarData;
+  return parentLike.map((section) => {
+    if (section.label !== "MAIN") return section;
+    return {
+      ...section,
+      submenuItems: (section.submenuItems || []).map((item: { label?: string; link?: string }) =>
+        item.label === "Parent Dashboard"
+          ? { ...item, label: "Guardian Dashboard", link: routes.guardianDashboard }
+          : item
+      ),
+    };
+  }) as typeof SidebarData;
 }
 
 function buildAdministrativeSidebar(): typeof SidebarData {
@@ -554,6 +590,10 @@ export function getSidebarDataForRole(role: string | undefined | null): typeof S
 
   if (roleKey === "Parent") {
     return buildParentSidebar();
+  }
+
+  if (roleKey === "Guardian") {
+    return buildGuardianSidebar();
   }
 
   if (roleKey === "Driver") {
