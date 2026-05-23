@@ -14,6 +14,11 @@ import { useDepartments } from "../../../core/hooks/useDepartments";
 import { useDesignations } from "../../../core/hooks/useDesignations";
 import { useStaffRoleOptions } from "../../../core/hooks/useStaffRoleOptions";
 import { staffDirectoryFriendlyError } from "./staffDirectoryErrors";
+import {
+  buildDepartmentSelectOptions,
+  buildDesignationSelectOptions,
+  resolveDesignationAfterDepartmentChange,
+} from "../../../core/utils/departmentDesignationUtils";
 
 const genderOptions: Option[] = [
   { value: "male", label: "Male" },
@@ -160,24 +165,27 @@ export default function StaffProfileForm({
   const staffId = initialStaff?.id != null ? Number(initialStaff.id) : null;
 
   const deptOptions = useMemo(
-    () =>
-      ((departments as any[]) || [])
-        .filter((d) => d.originalData?.id != null)
-        .map((d) => ({
-          value: String(d.originalData.id),
-          label: d.department ?? "",
-        })),
+    () => buildDepartmentSelectOptions((departments as any[]) || []),
     [departments]
   );
 
   const desigOptions = useMemo(
     () =>
-      ((designations as any[]) || [])
-        .filter((d) => d.originalData?.id != null)
-        .map((d) => ({
-          value: String(d.originalData.id),
-          label: d.designation ?? "",
-        })),
+      buildDesignationSelectOptions(
+        (designations as any[]) || [],
+        departmentId,
+        designationId
+      ),
+    [designations, departmentId, designationId]
+  );
+
+  const handleDepartmentChange = useCallback(
+    (value: string | null) => {
+      setDepartmentId(value);
+      setDesignationId((prev) =>
+        resolveDesignationAfterDepartmentChange(prev, (designations as any[]) || [], value)
+      );
+    },
     [designations]
   );
 
@@ -293,8 +301,15 @@ export default function StaffProfileForm({
   useEffect(() => {
     if (isDriverSelected && supportStaffDepartmentId) {
       setDepartmentId(supportStaffDepartmentId);
+      setDesignationId((prev) =>
+        resolveDesignationAfterDepartmentChange(
+          prev,
+          (designations as any[]) || [],
+          supportStaffDepartmentId
+        )
+      );
     }
-  }, [isDriverSelected, supportStaffDepartmentId]);
+  }, [isDriverSelected, supportStaffDepartmentId, designations]);
 
   useEffect(() => {
     if (isDriverSelected && driverRoleId) setRoleId(driverRoleId);
@@ -774,7 +789,7 @@ export default function StaffProfileForm({
                       className="select"
                       options={deptOptions}
                       value={departmentId}
-                      onChange={(v) => setDepartmentId(v)}
+                      onChange={handleDepartmentChange}
                     />
                   )}
                 </div>
@@ -793,6 +808,11 @@ export default function StaffProfileForm({
                       options={desigOptions}
                       value={designationId}
                       onChange={(v) => setDesignationId(v)}
+                      isDisabled={!departmentId || metaBusy}
+                      placeholder={departmentId ? "Select" : "Select department first"}
+                      noOptionsMessage={() =>
+                        departmentId ? "No designations for this department" : "Select department first"
+                      }
                     />
                   )}
                 </div>

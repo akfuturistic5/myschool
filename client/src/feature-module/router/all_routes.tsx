@@ -194,11 +194,15 @@ export const all_routes = {
   manageusers: "/user-management/manage-users",
   permissions: "/user-management/permissions",
 
-  //support routes
+  //support routes (legacy template)
   contactMessages: "/support/contact-messages",
   tickets: "/support/tickets",
   ticketGrid: "/support/ticket-grid",
   ticketDetails: "/support/ticket-details",
+
+  // Help & Support (school admin / headmaster)
+  helpSupport: "/help-support",
+  helpSupportTicket: "/help-support/tickets/:id",
 
   // membership routes
   membershipplan: "/membership-plans",
@@ -371,4 +375,7 @@ export const all_routes = {
   superAdminSchoolPermissions: "/super-admin/schools/permissions",
   superAdminPlans: "/super-admin/plans",
   superAdminEnquiries: "/super-admin/enquiries",
+  superAdminHelpCenter: "/super-admin/help",
+  superAdminSupportTickets: "/super-admin/support/tickets",
+  superAdminSupportTicket: "/super-admin/support/tickets/:id",
 };

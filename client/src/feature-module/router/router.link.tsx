@@ -227,6 +227,8 @@ import ContactMessages from "../support/contactMessages";
 import TicketDetails from "../support/ticket-details";
 import TicketGrid from "../support/ticket-grid";
 import Tickets from "../support/tickets";
+import HelpSupportPage from "../help-support";
+import TicketDetailPage from "../help-support/TicketDetailPage";
 import ClipBoard from "../uiInterface/advanced-ui/clipboard";
 import Counter from "../uiInterface/advanced-ui/counter";
 import RangeSlides from "../uiInterface/advanced-ui/rangeslider";
@@ -1577,6 +1579,16 @@ export const publicRoutes = [
   {
     path: routes.blogTags,
     element: guardContentModule(<BlogTags />),
+    route: Route,
+  },
+  {
+    path: routes.helpSupport,
+    element: <HelpSupportPage />,
+    route: Route,
+  },
+  {
+    path: routes.helpSupportTicket,
+    element: <TicketDetailPage />,
     route: Route,
   },
   {

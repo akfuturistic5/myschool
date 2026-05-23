@@ -91,6 +91,7 @@ const payrollRoutes = require('./src/routes/payrollRoutes');
 const paymentModeRoutes = require('./src/routes/paymentModeRoutes');
 const curriculumRoutes = require('./src/routes/curriculumRoutes');
 const homeworkRoutes = require('./src/routes/homeworkRoutes');
+const helpSupportRoutes = require('./src/routes/helpSupportRoutes');
 const settingsController = require('./src/controllers/settingsController');
 const { protectApi } = require('./src/middleware/authMiddleware');
 const { requireActiveAccount } = require('./src/middleware/requireActiveAccount');
@@ -395,6 +396,7 @@ app.use('/api/payroll', payrollRoutes);
 app.use('/api/payment-modes', paymentModeRoutes);
 app.use('/api/curriculum', curriculumRoutes);
 app.use('/api/homework', homeworkRoutes);
+app.use('/api/help-support', helpSupportRoutes);
 
 // Load-balancer probe (no internal metrics; detailed checks live under /api/health with token)
 app.get('/health', (req, res) => {

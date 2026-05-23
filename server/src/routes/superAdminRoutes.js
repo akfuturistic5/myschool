@@ -28,6 +28,38 @@ const {
   createEnquiry,
   patchEnquiry,
 } = require('../controllers/superAdminEnquiriesController');
+const {
+  listHelpCategoriesAdmin,
+  createHelpCategory,
+  patchHelpCategory,
+  deleteHelpCategory,
+  listHelpArticlesAdmin,
+  getHelpArticleAdmin,
+  createHelpArticle,
+  patchHelpArticle,
+  deleteHelpArticle,
+  listFaqsAdmin,
+  createFaq,
+  patchFaq,
+  deleteFaq,
+  listAllTickets,
+  getTicketAdmin,
+  patchTicketAdmin,
+  replyTicketAdmin,
+  downloadTicketAttachment,
+} = require('../controllers/superAdminHelpSupportController');
+const {
+  superAdminTicketPatchSchema,
+  superAdminReplySchema,
+  helpArticleBodySchema,
+  helpArticlePatchSchema,
+  helpFaqBodySchema,
+  helpFaqPatchSchema,
+  helpCategoryBodySchema,
+  helpCategoryPatchSchema,
+  helpIdParamSchema,
+  ticketListQuerySchema,
+} = require('../validations/supportValidation');
 const { getSuperAdminProfile } = require('../controllers/superAdminAuthController');
 const { strongPasswordJoi } = require('../utils/passwordPolicy');
 
@@ -85,6 +117,28 @@ const patchEnquirySchema = Joi.object({
   status: Joi.string().valid('new', 'contacted', 'converted', 'dismissed').required(),
 });
 router.patch('/enquiries/:id', validate(patchEnquirySchema), patchEnquiry);
+
+router.get('/help/categories', listHelpCategoriesAdmin);
+router.post('/help/categories', validate(helpCategoryBodySchema), createHelpCategory);
+router.patch('/help/categories/:id', validate(helpIdParamSchema, 'params'), validate(helpCategoryPatchSchema), patchHelpCategory);
+router.delete('/help/categories/:id', validate(helpIdParamSchema, 'params'), deleteHelpCategory);
+
+router.get('/help/articles', listHelpArticlesAdmin);
+router.get('/help/articles/:id', validate(helpIdParamSchema, 'params'), getHelpArticleAdmin);
+router.post('/help/articles', validate(helpArticleBodySchema), createHelpArticle);
+router.patch('/help/articles/:id', validate(helpIdParamSchema, 'params'), validate(helpArticlePatchSchema), patchHelpArticle);
+router.delete('/help/articles/:id', validate(helpIdParamSchema, 'params'), deleteHelpArticle);
+
+router.get('/help/faqs', listFaqsAdmin);
+router.post('/help/faqs', validate(helpFaqBodySchema), createFaq);
+router.patch('/help/faqs/:id', validate(helpIdParamSchema, 'params'), validate(helpFaqPatchSchema), patchFaq);
+router.delete('/help/faqs/:id', validate(helpIdParamSchema, 'params'), deleteFaq);
+
+router.get('/support/tickets', validate(ticketListQuerySchema, 'query'), listAllTickets);
+router.get('/support/tickets/:id', validate(helpIdParamSchema, 'params'), getTicketAdmin);
+router.patch('/support/tickets/:id', validate(superAdminTicketPatchSchema), patchTicketAdmin);
+router.post('/support/tickets/:id/replies', validate(superAdminReplySchema), replyTicketAdmin);
+router.get('/support/tickets/:ticketId/attachments/:attachmentId', downloadTicketAttachment);
 
 router.get('/schools', listSchools);
 router.post('/schools/:id/impersonate', impersonateSchool);

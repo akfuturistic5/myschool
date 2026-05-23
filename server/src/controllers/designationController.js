@@ -54,14 +54,42 @@ async function assertDepartmentExists(departmentId) {
   }
 }
 
-// Get all designations
+// Get all designations (optional ?department_id= for staff/teacher dropdowns)
 const getAllDesignations = async (req, res) => {
   try {
-    const result = await query(`
-      SELECT *
-      FROM designations
-      ORDER BY id ASC
-    `);
+    const deptRaw = req.query.department_id;
+    let result;
+
+    if (deptRaw !== undefined && deptRaw !== null && String(deptRaw).trim() !== '') {
+      const departmentId = parsePositiveIntId(deptRaw);
+      if (departmentId == null) {
+        return errorResponse(res, 400, 'Invalid department_id query parameter', 'VALIDATION_ERROR');
+      }
+      try {
+        await assertDepartmentExists(departmentId);
+      } catch (e) {
+        if (e.code === 'INVALID_DEPARTMENT') {
+          return errorResponse(res, 400, 'Department does not exist', 'VALIDATION_ERROR');
+        }
+        throw e;
+      }
+      result = await query(
+        `
+        SELECT *
+        FROM designations
+        WHERE department_id = $1
+          AND (is_active IS NOT FALSE)
+        ORDER BY designation_name ASC, id ASC
+      `,
+        [departmentId]
+      );
+    } else {
+      result = await query(`
+        SELECT *
+        FROM designations
+        ORDER BY id ASC
+      `);
+    }
 
     return success(res, 200, 'Designations fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {

@@ -167,12 +167,32 @@ class ApiService {
           this.logout().catch(() => { });
           window.dispatchEvent(new CustomEvent('auth:sessionExpired'));
         }
-        // Handle rate limiting (429) specifically
+        // Handle rate limiting (429) — prefer server message (Help AI, login, global, etc.)
         if (response.status === 429) {
           const errorText = await response.text();
           if (isDev) console.error('Rate limit exceeded:', errorText);
-          // Don't throw immediately - wait a bit and let deduplication handle retries
-          throw new Error(`Rate limit exceeded. Please wait a moment before trying again.`);
+          let message = 'Too many requests. Please wait a few seconds and try again.';
+          try {
+            const parsed = errorText ? JSON.parse(errorText) : null;
+            if (parsed?.message && String(parsed.message).trim()) {
+              message = String(parsed.message).trim();
+            }
+          } catch {
+            /* use default */
+          }
+          const err = new Error(message);
+          err.status = 429;
+          err.code = parsed?.code || parsed?.errorCode;
+          if (parsed?.retry_after_seconds) {
+            const sec = parseInt(parsed.retry_after_seconds, 10);
+            if (!Number.isNaN(sec) && sec > 0) err.retryAfterSeconds = sec;
+          }
+          const retryAfter = response.headers.get('Retry-After');
+          if (!err.retryAfterSeconds && retryAfter) {
+            const sec = parseInt(retryAfter, 10);
+            if (!Number.isNaN(sec) && sec > 0) err.retryAfterSeconds = sec;
+          }
+          throw err;
         }
         const errorText = await response.text();
         if (isDev) console.error('Response error text:', errorText);
@@ -4118,6 +4138,76 @@ class ApiService {
     return this.makeRequest('/payroll/bulk-status-update', {
       method: 'POST',
       body: JSON.stringify({ ids, status }),
+    });
+  }
+
+  // Help & Support
+  async getHelpSupportMeta() {
+    return this.makeRequest('/help-support/meta');
+  }
+
+  async searchHelpCenter(params = {}) {
+    const search = new URLSearchParams();
+    if (params.q) search.set('q', params.q);
+    if (params.category) search.set('category', params.category);
+    if (params.type) search.set('type', params.type);
+    const qs = search.toString();
+    return this.makeRequest(`/help-support/search${qs ? `?${qs}` : ''}`);
+  }
+
+  async getHelpCategories() {
+    return this.makeRequest('/help-support/categories');
+  }
+
+  async getHelpArticles(category) {
+    const qs = category ? `?category=${encodeURIComponent(category)}` : '';
+    return this.makeRequest(`/help-support/articles${qs}`);
+  }
+
+  async getHelpArticle(id) {
+    return this.makeRequest(`/help-support/articles/${encodeURIComponent(String(id))}`);
+  }
+
+  async getHelpFaqs(category) {
+    const qs = category ? `?category=${encodeURIComponent(category)}` : '';
+    return this.makeRequest(`/help-support/faqs${qs}`);
+  }
+
+  async getSupportTickets(params = {}) {
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v != null && v !== '') search.set(k, String(v));
+    });
+    const qs = search.toString();
+    return this.makeRequest(`/help-support/tickets${qs ? `?${qs}` : ''}`);
+  }
+
+  async getSupportTicket(id) {
+    return this.makeRequest(`/help-support/tickets/${id}`);
+  }
+
+  async createSupportTicket(payload) {
+    return this.makeRequest('/help-support/tickets', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async replySupportTicket(id, payload) {
+    return this.makeRequest(`/help-support/tickets/${id}/replies`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async uploadSupportAttachment(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', 'support');
+    return this.makeRequest('/storage/upload', {
+      method: 'POST',
+      body: formData,
+      isMultipart: true,
     });
   }
 }

@@ -15,6 +15,9 @@ import SuperAdminSchoolEdit from "../superAdmin/SuperAdminSchoolEdit";
 import SuperAdminSchoolModules from "../superAdmin/SuperAdminSchoolModules";
 import SuperAdminPlans from "../superAdmin/SuperAdminPlans";
 import SuperAdminEnquiries from "../superAdmin/SuperAdminEnquiries";
+import SuperAdminHelpCenter from "../superAdmin/SuperAdminHelpCenter";
+import SuperAdminSupportTickets from "../superAdmin/SuperAdminSupportTickets";
+import SuperAdminSupportTicketDetail from "../superAdmin/SuperAdminSupportTicketDetail";
 import Login from "../auth/login/login";
 
 const ALLRoutes: React.FC = () => {
@@ -29,6 +32,9 @@ const ALLRoutes: React.FC = () => {
             <Route path="/super-admin/dashboard" element={<SuperAdminDashboard />} />
             <Route path="/super-admin/plans" element={<SuperAdminPlans />} />
             <Route path="/super-admin/enquiries" element={<SuperAdminEnquiries />} />
+            <Route path="/super-admin/help" element={<SuperAdminHelpCenter />} />
+            <Route path="/super-admin/support/tickets" element={<SuperAdminSupportTickets />} />
+            <Route path="/super-admin/support/tickets/:id" element={<SuperAdminSupportTicketDetail />} />
             <Route path="/super-admin/schools/list" element={<SuperAdminSchoolList />} />
             <Route path="/super-admin/schools/permissions" element={<SuperAdminSchoolPermissions />} />
             <Route path="/super-admin/schools/:id/modules" element={<SuperAdminSchoolModules />} />

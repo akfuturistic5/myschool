@@ -1,7 +1,7 @@
 const path = require('path');
 
 /** Logical folders under each school root (whitelist). */
-const ALLOWED_FOLDERS = Object.freeze(['students', 'documents', 'uploads', 'temp', 'users']);
+const ALLOWED_FOLDERS = Object.freeze(['students', 'documents', 'uploads', 'temp', 'users', 'support']);
 
 const DEFAULT_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 

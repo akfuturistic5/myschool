@@ -29,6 +29,12 @@ import { useSubjects } from "../../../../core/hooks/useSubjects";
 import { useBloodGroups } from "../../../../core/hooks/useBloodGroups";
 import { useDepartments } from "../../../../core/hooks/useDepartments";
 import { useDesignations } from "../../../../core/hooks/useDesignations";
+import {
+  buildDepartmentSelectOptions,
+  buildDesignationSelectOptions,
+  designationBelongsToDepartment,
+  resolveDesignationAfterDepartmentChange,
+} from "../../../../core/utils/departmentDesignationUtils";
 import { useSalaryComponents } from "../../../../core/hooks/useSalaryComponents";
 import {
   validateField,
@@ -191,12 +197,24 @@ const TeacherForm = () => {
   const [checkingUnique, setCheckingUnique] = useState(false);
   const [assignedComponents, setAssignedComponents] = useState<Array<{ component_id: number; amount: string }>>([]);
   const { salaryComponents, loading: loadingComponents } = useSalaryComponents();
+  const { departments, loading: departmentsLoading, error: departmentsError } = useDepartments();
+  const { designations, loading: designationsLoading, error: designationsError } = useDesignations();
   const [formBanner, setFormBanner] = useState<{ title: string; message: string } | null>(null);
   const [resumeFileError, setResumeFileError] = useState<string | null>(null);
   const [joiningLetterFileError, setJoiningLetterFileError] = useState<string | null>(null);
 
   /** Class/subject are optional at hire; use Teacher assignments (or edit) later. */
   const requireClassSubject = false;
+
+  const designationMatchesDepartment = useMemo(
+    () =>
+      designationBelongsToDepartment(
+        (designations as any[]) || [],
+        selectedDesignationId,
+        selectedDepartmentId
+      ),
+    [designations, selectedDesignationId, selectedDepartmentId]
+  );
 
   const teacherFormValues = useMemo<TeacherFormValues>(
     () => ({
@@ -206,6 +224,8 @@ const TeacherForm = () => {
       email,
       qualification,
       joiningDate,
+      department_id: selectedDepartmentId,
+      designation_id: selectedDesignationId,
       class_id: selectedClassId,
       subject_id: selectedSubjectId,
       new_password: newPassword,
@@ -225,6 +245,8 @@ const TeacherForm = () => {
       email,
       qualification,
       joiningDate,
+      selectedDepartmentId,
+      selectedDesignationId,
       selectedClassId,
       selectedSubjectId,
       newPassword,
@@ -240,8 +262,23 @@ const TeacherForm = () => {
   );
 
   const syncErrors = useMemo(
-    () => validateTeacherFormSync(teacherFormValues, { requireClassSubject, isEdit }),
-    [teacherFormValues, requireClassSubject, isEdit]
+    () =>
+      validateTeacherFormSync(teacherFormValues, {
+        requireClassSubject,
+        isEdit,
+        designationBelongsToDepartment:
+          !selectedDepartmentId || !selectedDesignationId
+            ? true
+            : designationMatchesDepartment,
+      }),
+    [
+      teacherFormValues,
+      requireClassSubject,
+      isEdit,
+      selectedDepartmentId,
+      selectedDesignationId,
+      designationMatchesDepartment,
+    ]
   );
 
   const mergedErrors = useMemo(() => {
@@ -291,6 +328,10 @@ const TeacherForm = () => {
     const base = validateTeacherFormSync(teacherFormValues, {
       requireClassSubject,
       isEdit,
+      designationBelongsToDepartment:
+        !selectedDepartmentId || !selectedDesignationId
+          ? true
+          : designationMatchesDepartment,
     });
     const m: Partial<Record<TeacherFormField, string>> = { ...base };
     if (asyncErrors.phone) m.phone = asyncErrors.phone;
@@ -305,6 +346,9 @@ const TeacherForm = () => {
     asyncErrors,
     resumeFileError,
     joiningLetterFileError,
+    selectedDepartmentId,
+    selectedDesignationId,
+    designationMatchesDepartment,
   ]);
 
   // Debounced uniqueness (mobile / email) — optional enhancement
@@ -349,8 +393,34 @@ const TeacherForm = () => {
   const { classes, loading: classesLoading, error: classesError } = useClasses(academicYearId);
   const { subjects, loading: subjectsLoading, error: subjectsError } = useSubjects();
   const { bloodGroups, loading: bloodGroupsLoading, error: bloodGroupsError } = useBloodGroups();
-  const { departments, loading: departmentsLoading, error: departmentsError } = useDepartments();
-  const { designations, loading: designationsLoading, error: designationsError } = useDesignations();
+
+  const deptOptions = useMemo(
+    () => buildDepartmentSelectOptions((departments as any[]) || []),
+    [departments]
+  );
+
+  const desigOptions = useMemo(
+    () =>
+      buildDesignationSelectOptions(
+        (designations as any[]) || [],
+        selectedDepartmentId,
+        isEdit ? selectedDesignationId : null
+      ),
+    [designations, selectedDepartmentId, selectedDesignationId, isEdit]
+  );
+
+  const payrollMetaBusy = departmentsLoading || designationsLoading;
+
+  const handleDepartmentChange = useCallback(
+    (value: string | null) => {
+      setSelectedDepartmentId(value);
+      setSelectedDesignationId((prev) =>
+        resolveDesignationAfterDepartmentChange(prev, (designations as any[]) || [], value)
+      );
+      touchField("department_id");
+    },
+    [designations, touchField]
+  );
 
   useEffect(() => {
     if (location.pathname === routes.editTeacher) {
@@ -1227,34 +1297,11 @@ const TeacherForm = () => {
                             </div>
                           </div>
                         </div>
-                        <div className="col-lg-4 col-md-6">
+                        <div className="col-lg-4 col-md-6" data-validation-field="department_id">
                           <div className="mb-3">
-                            <label className="form-label">Designation</label>
-                            {designationsLoading ? (
-                              <div className="form-control">
-                                <i className="ti ti-loader ti-spin me-2" />
-                                Loading…
-                              </div>
-                            ) : designationsError ? (
-                              <div className="form-control text-danger">{designationsError}</div>
-                            ) : (
-                              <CommonSelect
-                                className="select"
-                                options={(designations || [])
-                                  .filter((d: any) => d.originalData?.id != null)
-                                  .map((d: any) => ({
-                                    value: String(d.originalData.id),
-                                    label: d.designation ?? "",
-                                  }))}
-                                value={selectedDesignationId}
-                                onChange={(value) => setSelectedDesignationId(value)}
-                              />
-                            )}
-                          </div>
-                        </div>
-                        <div className="col-lg-4 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Department</label>
+                            <label className="form-label">
+                              Department <span className="text-danger">*</span>
+                            </label>
                             {departmentsLoading ? (
                               <div className="form-control">
                                 <i className="ti ti-loader ti-spin me-2" />
@@ -1265,15 +1312,53 @@ const TeacherForm = () => {
                             ) : (
                               <CommonSelect
                                 className="select"
-                                options={(departments || [])
-                                  .filter((d: any) => d.originalData?.id != null)
-                                  .map((d: any) => ({
-                                    value: String(d.originalData.id),
-                                    label: d.department ?? "",
-                                  }))}
+                                options={deptOptions}
                                 value={selectedDepartmentId}
-                                onChange={(value) => setSelectedDepartmentId(value)}
+                                onChange={handleDepartmentChange}
+                                onBlur={() => touchField("department_id")}
+                                isDisabled={payrollMetaBusy}
                               />
+                            )}
+                            {showFieldError("department_id") && mergedErrors.department_id && (
+                              <div className="field-hint-error">{mergedErrors.department_id}</div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-lg-4 col-md-6" data-validation-field="designation_id">
+                          <div className="mb-3">
+                            <label className="form-label">
+                              Designation <span className="text-danger">*</span>
+                            </label>
+                            {designationsLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2" />
+                                Loading…
+                              </div>
+                            ) : designationsError ? (
+                              <div className="form-control text-danger">{designationsError}</div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={desigOptions}
+                                value={selectedDesignationId}
+                                onChange={(value) => {
+                                  setSelectedDesignationId(value);
+                                  touchField("designation_id");
+                                }}
+                                onBlur={() => touchField("designation_id")}
+                                isDisabled={!selectedDepartmentId || payrollMetaBusy}
+                                placeholder={
+                                  selectedDepartmentId ? "Select" : "Select department first"
+                                }
+                                noOptionsMessage={() =>
+                                  selectedDepartmentId
+                                    ? "No designations for this department"
+                                    : "Select department first"
+                                }
+                              />
+                            )}
+                            {showFieldError("designation_id") && mergedErrors.designation_id && (
+                              <div className="field-hint-error">{mergedErrors.designation_id}</div>
                             )}
                           </div>
                         </div>
