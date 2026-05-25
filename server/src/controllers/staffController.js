@@ -8,6 +8,10 @@ const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
 const { ensureTenantStaffDocDir, resolveStaffDocumentPath, sanitizeTenant } = require('../utils/staffDocumentStorage');
 const { ensureTenantStaffProfileDir, resolveStaffProfilePath } = require('../utils/staffProfileStorage');
 const { enrichStaffProfileAllocations } = require('../services/profileAllocationDetailsService');
+const {
+  assertDesignationBelongsToDepartment,
+  mapDesignationDepartmentError,
+} = require('../utils/designationDepartmentValidation');
 
 const TEACHER_EMAIL_MAX_LEN = 100;
 const EMAIL_FORMAT_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -309,6 +313,9 @@ const createStaff = async (req, res) => {
     if (department_id != null && department_id !== '' && Number.isNaN(deptParsed)) return errorResponse(res, 400, 'Invalid department', 'VALIDATION_ERROR');
     if (blood_group_id != null && blood_group_id !== '' && Number.isNaN(bgParsed)) return errorResponse(res, 400, 'Invalid blood group', 'VALIDATION_ERROR');
     if (role_id != null && role_id !== '' && Number.isNaN(roleIdParsed)) return errorResponse(res, 400, 'Invalid role', 'VALIDATION_ERROR');
+    if (!deptParsed || !desigParsed) {
+      return errorResponse(res, 400, 'Department and designation are required', 'VALIDATION_ERROR');
+    }
 
     let statusValue = 'Active';
     if (is_active === false || is_active === 'false' || is_active === 0 || is_active === 'Inactive') statusValue = 'Inactive';
@@ -349,6 +356,21 @@ const createStaff = async (req, res) => {
         if (supId) deptForInsert = supId;
         const licTrim = (license_number || '').toString().trim();
         if (!licTrim) { const err = new Error('Driving licence number is required for driver designation'); err.staffInputError = { status: 400, code: 'LICENSE_REQUIRED' }; throw err; }
+      }
+
+      if (desigParsed && deptForInsert) {
+        try {
+          await assertDesignationBelongsToDepartment(
+            (sql, params) => client.query(sql, params),
+            desigParsed,
+            deptForInsert
+          );
+        } catch (e) {
+          const mapped = mapDesignationDepartmentError(e.code);
+          const err = new Error(mapped.message);
+          err.staffInputError = { status: mapped.status, code: mapped.code };
+          throw err;
+        }
       }
 
       let resolvedStaffRoleId = ROLES.ADMINISTRATIVE;
@@ -506,6 +528,40 @@ const updateStaff = async (req, res) => {
           [eTrim, userId || 0]
         );
         if (dup.rows.length > 0) { const err = new Error('Email is already registered to another account'); err.staffInputError = { status: 409, code: 'EMAIL_IN_USE' }; throw err; }
+      }
+
+      if (designation_id !== undefined || department_id !== undefined) {
+        const curStaff = await client.query(
+          `SELECT designation_id, department_id FROM staff WHERE id = $1 LIMIT 1`,
+          [staffIdNum]
+        );
+        const cur = curStaff.rows[0] || {};
+        const finalDesig =
+          designation_id !== undefined
+            ? desigParsed && !Number.isNaN(desigParsed)
+              ? desigParsed
+              : null
+            : cur.designation_id;
+        const finalDept =
+          department_id !== undefined
+            ? deptParsed && !Number.isNaN(deptParsed)
+              ? deptParsed
+              : null
+            : cur.department_id;
+        if (finalDesig && finalDept) {
+          try {
+            await assertDesignationBelongsToDepartment(
+              (sql, params) => client.query(sql, params),
+              finalDesig,
+              finalDept
+            );
+          } catch (e) {
+            const mapped = mapDesignationDepartmentError(e.code);
+            const err = new Error(mapped.message);
+            err.staffInputError = { status: mapped.status, code: mapped.code };
+            throw err;
+          }
+        }
       }
 
       // ── Block A: Update users (personal / login fields) ──

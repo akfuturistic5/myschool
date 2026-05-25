@@ -96,6 +96,9 @@ const STUDENT_HOMEWORK_ROLES = [ROLES.STUDENT];
 /** Parent / guardian read linked child's homework (no submit) */
 const PARENT_HOMEWORK_ROLES = [ROLES.PARENT, ROLES.GUARDIAN];
 
+/** Help center & support tickets (Headmaster + Administrative) */
+const SUPPORT_ACCESS_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
+
 module.exports = {
   ROLES,
   ADMIN_ROLE_IDS,
@@ -122,4 +125,5 @@ module.exports = {
   HOMEWORK_MANAGER_ROLES,
   STUDENT_HOMEWORK_ROLES,
   PARENT_HOMEWORK_ROLES,
+  SUPPORT_ACCESS_ROLES,
 };

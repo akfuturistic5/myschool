@@ -36,6 +36,7 @@ const ADMINISTRATIVE_ALLOWED_PATH_PREFIXES = [
   '/report/',
   '/application/',
   '/support/',
+  '/help-support/',
 ];
 
 const ADMINISTRATIVE_ALLOWED_EXACT_PATHS = new Set([
@@ -51,6 +52,7 @@ const ADMINISTRATIVE_ALLOWED_EXACT_PATHS = new Set([
   all_routes.notes,
   all_routes.fileManager,
   all_routes.profile,
+  all_routes.helpSupport,
 ]);
 
 const ADMINISTRATIVE_BLOCKED_EXACT_PATHS = new Set<string>();
@@ -306,6 +308,11 @@ export function canAccessPath(path: string, role: RoleInput, explicitRoleId?: nu
   ];
   if (dashboardPaths.includes(path)) {
     return path === userDashboard;
+  }
+
+  /** Help & Support: Headmaster + Administrative only (matches server SUPPORT_ACCESS_ROLES). */
+  if (path === all_routes.helpSupport || path.startsWith('/help-support/')) {
+    return isHeadmasterRole(role, explicitRoleId) || isAdministrativeRole(role, explicitRoleId);
   }
 
   /** Academic Years module: Headmaster + Administrative only (not teachers/students/parents). */

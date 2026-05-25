@@ -10,6 +10,8 @@ node_modules/
 client/.env
 server/uploads/
 server/storage/
+server/scripts/qa-help-support-creds.json
+server/scripts/qa-help-support-results.json
 
 # Logs
 npm-debug.log*

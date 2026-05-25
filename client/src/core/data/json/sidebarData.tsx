@@ -608,6 +608,21 @@ export const SidebarData = [
     ],
   },
   {
+    label: "Help & Support",
+    submenuOpen: true,
+    showSubRoute: false,
+    submenuHdr: "Help & Support",
+    submenuItems: [
+      {
+        label: "Help Center",
+        link: routes.helpSupport,
+        icon: "ti ti-lifebuoy",
+        showSubRoute: false,
+        submenu: false,
+      },
+    ],
+  },
+  {
     label: "REMOVE",
     submenuOpen: false,
     showSubRoute: false,
@@ -1079,52 +1094,6 @@ export const SidebarData = [
             submenuItems: [
               { label: "Basic Tables", link: "/tables-basic" },
               { label: "Data Table", link: "/data-tables" },
-            ],
-          },
-        ],
-      },
-      {
-        label: "Help",
-        submenuOpen: true,
-        showSubRoute: false,
-        submenuItems: [
-          {
-            label: "Documentation",
-            link: "https://preschool.dreamstechnologies.com/documentation/index.html",
-            icon: "ti ti-file-text",
-            showSubRoute: false,
-          },
-          {
-            label: "Changelog ",
-            version: "v1.8.3",
-            link: "https://preschool.dreamstechnologies.com/documentation/changelog.html",
-            icon: "ti ti-exchange",
-            showSubRoute: false,
-          },
-          {
-            label: "Multi Level",
-            showSubRoute: false,
-            submenu: true,
-            icon: "ti ti-menu-2",
-            submenuItems: [
-              { label: "Level 1.1", link: "#", showSubRoute: false },
-              {
-                label: "Level 1.2",
-                submenu: true,
-                showSubRoute: false,
-                submenuItems: [
-                  { label: "Level 2.1", link: "#", showSubRoute: false },
-                  {
-                    label: "Level 2.2",
-                    submenu: true,
-                    showSubRoute: false,
-                    submenuItems: [
-                      { label: "Level 3.1", link: "#", showSubRoute: false },
-                      { label: "Level 3.2", link: "#", showSubRoute: false },
-                    ],
-                  },
-                ],
-              },
             ],
           },
         ],

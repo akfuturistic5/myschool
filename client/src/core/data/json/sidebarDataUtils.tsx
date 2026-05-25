@@ -28,7 +28,7 @@ const ADMINISTRATIVE_VISIBLE_SECTIONS = new Set([
   "Announcements",
   "Reports",
   "Pages",
-  "Help",
+  "Help & Support",
 ]);
 
 function buildTeacherSidebar() {

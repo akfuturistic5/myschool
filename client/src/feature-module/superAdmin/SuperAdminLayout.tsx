@@ -109,6 +109,14 @@ const SuperAdminLayout = () => {
               <i className="ti ti-mail-forward" />
               School enquiries
             </NavLink>
+            <NavLink to={r.superAdminHelpCenter} className={navCls}>
+              <i className="ti ti-book-2" />
+              Help center CMS
+            </NavLink>
+            <NavLink to={r.superAdminSupportTickets} className={navCls}>
+              <i className="ti ti-lifebuoy" />
+              Support tickets
+            </NavLink>
           </nav>
           <div className="mt-auto px-3 py-3 small border-top" style={{ borderColor: 'var(--sa-border)' }}>
             <div className="text-muted">Signed in as platform admin</div>

@@ -12,6 +12,7 @@
     "db:master:migrate": "node scripts/db-runner.js --db master --sql migrations/master/masters_schema.sql",
     "db:master:migrate:saas": "node scripts/db-runner.js --db master --sql migrations/master/20260514120000_saas_plans_enquiries.sql",
     "db:master:migrate:saas-pricing": "node scripts/db-runner.js --db master --sql migrations/master/20260515120000_saas_plans_pricing.sql",
+    "db:master:migrate:help-support": "node scripts/db-runner.js --db master --sql migrations/master/20260523120000_help_support_module.sql",
     "db:master:seed:admin": "node scripts/db-runner.js --db master --sql seeds/master/super_admin_seed.sql",
     "db:master:seed:demo-school": "node scripts/db-runner.js --db master --sql seeds/master/demo_school_registry_seed.sql",
     "db:master:create-demo-db": "node scripts/create-db.js sxis_school_db",

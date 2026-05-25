@@ -8,6 +8,8 @@ export type TeacherFormField =
   | "email"
   | "qualification"
   | "joiningDate"
+  | "department_id"
+  | "designation_id"
   | "class_id"
   | "subject_id"
   | "new_password"
@@ -72,6 +74,17 @@ export function validateField(
       if (!jd || !jd.isValid()) return "Date of joining is required";
       return null;
     }
+    case "department_id": {
+      if (!v?.trim()) return "Department is required";
+      return null;
+    }
+    case "designation_id": {
+      if (!v?.trim()) return "Designation is required";
+      if (ctx?.departmentId && ctx?.designationBelongsToDepartment === false) {
+        return "Designation does not belong to the selected department";
+      }
+      return null;
+    }
     case "class_id": {
       if (ctx?.requireClassSubject && !v?.trim()) return "Class is required";
       return null;
@@ -130,6 +143,8 @@ export type TeacherFormValues = {
   email: string;
   qualification: string;
   joiningDate: Dayjs | null;
+  department_id: string | null;
+  designation_id: string | null;
   class_id: string | null;
   subject_id: string | null;
   new_password: string;
@@ -144,13 +159,19 @@ export type TeacherFormValues = {
 
 export function validateTeacherFormSync(
   values: TeacherFormValues,
-  options: { requireClassSubject: boolean; isEdit: boolean }
+  options: {
+    requireClassSubject: boolean;
+    isEdit: boolean;
+    designationBelongsToDepartment?: boolean;
+  }
 ): Partial<Record<TeacherFormField, string>> {
   const ctxBase = {
     joiningDate: values.joiningDate,
     requireClassSubject: options.requireClassSubject,
     password: values.new_password,
     confirmPassword: values.confirm_password,
+    departmentId: values.department_id,
+    designationBelongsToDepartment: options.designationBelongsToDepartment,
   };
 
   const out: Partial<Record<TeacherFormField, string>> = {};
@@ -164,6 +185,8 @@ export function validateTeacherFormSync(
     { key: "phone", val: values.phone },
     { key: "email", val: values.email },
     { key: "qualification", val: values.qualification },
+    { key: "department_id", val: values.department_id },
+    { key: "designation_id", val: values.designation_id },
     { key: "father_name", val: values.father_name },
     { key: "mother_name", val: values.mother_name },
     { key: "pan_number", val: values.pan_number },
@@ -201,6 +224,8 @@ export const TEACHER_FORM_FIELD_ORDER: TeacherFormField[] = [
   "email",
   "qualification",
   "joiningDate",
+  "department_id",
+  "designation_id",
   "class_id",
   "subject_id",
   "new_password",

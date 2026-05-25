@@ -7,6 +7,10 @@ const { createTeacherUser } = require('../utils/createPersonUser');
 const { resolveTeacherDocumentPath, sanitizeTenant } = require('../utils/teacherDocumentStorage');
 const { resolveAcademicYearId } = require('../utils/academicYear');
 const { enrichStaffProfileAllocations } = require('../services/profileAllocationDetailsService');
+const {
+  assertDesignationBelongsToDepartment,
+  mapDesignationDepartmentError,
+} = require('../utils/designationDepartmentValidation');
 const { resolveVehicleRouteAssignmentForAllocation } = require('../utils/transportAllocationVra');
 
 async function upsertStaffTransportAllocation(client, staffId, staffAcademicYearId, transportPayload) {
@@ -897,6 +901,21 @@ const createTeacher = async (req, res) => {
       return errorResponse(res, 400, 'Invalid blood group', 'VALIDATION_ERROR');
     }
 
+    try {
+      const deptOk = await query('SELECT 1 FROM departments WHERE id = $1 LIMIT 1', [deptParsed]);
+      if (!deptOk.rows.length) {
+        return errorResponse(res, 400, 'Department does not exist', 'VALIDATION_ERROR');
+      }
+      const desigOk = await query('SELECT 1 FROM designations WHERE id = $1 LIMIT 1', [desigParsed]);
+      if (!desigOk.rows.length) {
+        return errorResponse(res, 400, 'Designation does not exist', 'VALIDATION_ERROR');
+      }
+      await assertDesignationBelongsToDepartment(query, desigParsed, deptParsed);
+    } catch (e) {
+      const mapped = mapDesignationDepartmentError(e.code);
+      return errorResponse(res, mapped.status, mapped.message, mapped.code);
+    }
+
     let isActiveBoolean = true;
     if (status === 'Inactive' || status === 'inactive') isActiveBoolean = false;
     else if (is_active === false || is_active === 'false' || is_active === 0) isActiveBoolean = false;
@@ -1237,7 +1256,56 @@ const updateTeacher = async (req, res) => {
 
     const languagesArr = Array.isArray(languages_known) ? languages_known : (typeof languages_known === 'string' ? languages_known.split(',').map(s => s.trim()).filter(Boolean) : null);
 
+    const desigParsedUpdate =
+      designation_id != null && designation_id !== ''
+        ? parsePositiveIntOrNull(designation_id)
+        : undefined;
+    const deptParsedUpdate =
+      department_id != null && department_id !== ''
+        ? parsePositiveIntOrNull(department_id)
+        : undefined;
+    if (
+      (designation_id != null && designation_id !== '' && Number.isNaN(desigParsedUpdate)) ||
+      (department_id != null && department_id !== '' && Number.isNaN(deptParsedUpdate))
+    ) {
+      return errorResponse(res, 400, 'Invalid department or designation', 'VALIDATION_ERROR');
+    }
+
     const result = await executeTransaction(async (client) => {
+      if (designation_id != null || department_id != null) {
+        const curStaff = await client.query(
+          `SELECT designation_id, department_id FROM staff WHERE id = $1 LIMIT 1`,
+          [staffId]
+        );
+        const cur = curStaff.rows[0] || {};
+        const finalDesig =
+          designation_id != null
+            ? desigParsedUpdate && !Number.isNaN(desigParsedUpdate)
+              ? desigParsedUpdate
+              : null
+            : cur.designation_id;
+        const finalDept =
+          department_id != null
+            ? deptParsedUpdate && !Number.isNaN(deptParsedUpdate)
+              ? deptParsedUpdate
+              : null
+            : cur.department_id;
+        if (finalDesig && finalDept) {
+          try {
+            await assertDesignationBelongsToDepartment(
+              (sql, params) => client.query(sql, params),
+              finalDesig,
+              finalDept
+            );
+          } catch (e) {
+            const mapped = mapDesignationDepartmentError(e.code);
+            const err = new Error(mapped.message);
+            err.teacherInputError = { status: mapped.status, code: mapped.code };
+            throw err;
+          }
+        }
+      }
+
       // 1. Update User info
       if (first_name != null || last_name != null || gender != null || date_of_birth != null ||
           phone != null || email != null || facebook != null || twitter != null || linkedin != null || youtube != null || instagram != null || address != null || permanent_address != null || current_address != null || blood_group_id != null) {
@@ -1498,6 +1566,14 @@ const updateTeacher = async (req, res) => {
     return success(res, 200, 'Teacher updated successfully', result);
   } catch (error) {
     console.error('Error updating teacher:', error);
+    if (error.teacherInputError) {
+      return errorResponse(
+        res,
+        error.teacherInputError.status,
+        error.message,
+        error.teacherInputError.code,
+      );
+    }
     if (error.code === '23505') {
       return errorResponse(
         res,

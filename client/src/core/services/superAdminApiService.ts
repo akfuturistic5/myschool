@@ -347,6 +347,170 @@ class SuperAdminApiService {
       body: JSON.stringify({ status }),
     });
   }
+
+  // Help Center CMS
+  async listHelpCategories() {
+    return this.makeRequest('/help/categories');
+  }
+
+  async createHelpCategory(payload: {
+    slug: string;
+    name: string;
+    description?: string;
+    icon?: string;
+    sort_order?: number;
+    is_active?: boolean;
+  }) {
+    return this.makeRequest('/help/categories', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async patchHelpCategory(
+    id: number,
+    payload: {
+      slug?: string;
+      name?: string;
+      description?: string;
+      icon?: string;
+      sort_order?: number;
+      is_active?: boolean;
+    }
+  ) {
+    return this.makeRequest(`/help/categories/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteHelpCategory(id: number) {
+    return this.makeRequest(`/help/categories/${id}`, { method: 'DELETE' });
+  }
+
+  async listHelpArticles() {
+    return this.makeRequest('/help/articles');
+  }
+
+  async getHelpArticle(id: number) {
+    return this.makeRequest(`/help/articles/${id}`);
+  }
+
+  async createHelpArticle(payload: {
+    category_id: number;
+    title: string;
+    description?: string;
+    content: string;
+    status?: string;
+    sort_order?: number;
+  }) {
+    return this.makeRequest('/help/articles', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async patchHelpArticle(
+    id: number,
+    payload: {
+      category_id?: number;
+      title?: string;
+      description?: string;
+      content?: string;
+      status?: string;
+      sort_order?: number;
+    }
+  ) {
+    return this.makeRequest(`/help/articles/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteHelpArticle(id: number) {
+    return this.makeRequest(`/help/articles/${id}`, { method: 'DELETE' });
+  }
+
+  async listHelpFaqs() {
+    return this.makeRequest('/help/faqs');
+  }
+
+  async createHelpFaq(payload: {
+    category_slug?: string | null;
+    question: string;
+    answer: string;
+    sort_order?: number;
+    is_active?: boolean;
+  }) {
+    return this.makeRequest('/help/faqs', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async patchHelpFaq(
+    id: number,
+    payload: {
+      category_slug?: string | null;
+      question?: string;
+      answer?: string;
+      sort_order?: number;
+      is_active?: boolean;
+    }
+  ) {
+    return this.makeRequest(`/help/faqs/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteHelpFaq(id: number) {
+    return this.makeRequest(`/help/faqs/${id}`, { method: 'DELETE' });
+  }
+
+  async listSupportTickets(params: Record<string, string | number | undefined> = {}) {
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v != null && v !== '') search.set(k, String(v));
+    });
+    const qs = search.toString();
+    return this.makeRequest(`/support/tickets${qs ? `?${qs}` : ''}`);
+  }
+
+  async getSupportTicket(id: number) {
+    return this.makeRequest(`/support/tickets/${id}`);
+  }
+
+  async patchSupportTicket(id: number, payload: { status?: string }) {
+    return this.makeRequest(`/support/tickets/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async replySupportTicket(id: number, payload: { message: string; is_internal_note?: boolean }) {
+    return this.makeRequest(`/support/tickets/${id}/replies`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  getSupportAttachmentUrl(ticketId: number, attachmentId: number) {
+    return `/super-admin/api/support/tickets/${ticketId}/attachments/${attachmentId}`;
+  }
+
+  async fetchSupportAttachment(ticketId: number, attachmentId: number): Promise<Blob> {
+    const base = await getSuperAdminApiBaseUrl();
+    const url = `${base}/support/tickets/${ticketId}/attachments/${attachmentId}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { Accept: '*/*' },
+    });
+    if (!res.ok) {
+      let msg = 'Failed to load attachment';
+      try {
+        const j = (await res.json()) as { message?: string };
+        if (j?.message) msg = j.message;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+    return res.blob();
+  }
 }
 
 const superAdminApiService = new SuperAdminApiService();
