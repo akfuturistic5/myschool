@@ -17,12 +17,15 @@ export type MonthlyAttendanceGridRow = {
   summary: MonthlyAttendanceGridSummary;
 };
 
-const normalizeStatusKey = (status: unknown): string =>
+/** Normalize API/DB attendance status for UI counts and badges. */
+export const normalizeAttendanceStatusKey = (status: unknown): string =>
   String(status || "")
     .trim()
     .toLowerCase()
     .replace(/[\s\-_–—−]+/g, "_")
     .replace(/^halfday$/, "half_day");
+
+const normalizeStatusKey = normalizeAttendanceStatusKey;
 
 function summaryFromDaily(daily: Record<string, string>): MonthlyAttendanceGridSummary {
   const summary = { present: 0, late: 0, absent: 0, halfDay: 0, holiday: 0, percentage: 0 };

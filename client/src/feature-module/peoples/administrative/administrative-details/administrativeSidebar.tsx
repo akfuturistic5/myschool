@@ -112,11 +112,11 @@ const AdministrativeSidebar = ({ staff }: AdministrativeSidebarProps) => {
           <div className="card-body pb-1">
             <h6 className="mb-2 text-muted">Quick link</h6>
             <Link
-              to={routes.listLeaves}
+              to={routes.administrativeLeaves}
               className="btn btn-outline-primary btn-sm w-100"
             >
-              <i className="ti ti-calendar-event me-1" />
-              HRM — List leaves
+              <i className="ti ti-calendar-due me-1" />
+              My Leave &amp; Attendance
             </Link>
           </div>
         </div>

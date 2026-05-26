@@ -1122,6 +1122,7 @@ class ApiService {
     if (params.departmentId != null) search.set('department_id', String(params.departmentId));
     if (params.designationId != null) search.set('designation_id', String(params.designationId));
     if (params.academicYearId != null) search.set('academic_year_id', String(params.academicYearId));
+    if (params.staffId != null) search.set('staff_id', String(params.staffId));
     const qs = search.toString();
     return this.makeRequest(`/attendance/reports/${entityType}${qs ? `?${qs}` : ''}`);
   }
@@ -1824,6 +1825,12 @@ class ApiService {
     return this.makeRequest('/designations', {
       method: 'POST',
       body: JSON.stringify(designationData),
+    });
+  }
+
+  async deleteDesignation(id) {
+    return this.makeRequest(`/designations/${id}`, {
+      method: 'DELETE',
     });
   }
 

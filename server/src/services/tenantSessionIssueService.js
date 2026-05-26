@@ -148,8 +148,36 @@ async function issueTenantSessionForUser(req, res, { school, user, targetDbName,
   return responseData;
 }
 
+/**
+ * Re-issue auth_token cookie when DB role changed but JWT is stale (e.g. staff role sync).
+ * Does not rotate sid — existing session stays valid.
+ */
+function refreshTenantJwtCookie(req, res, { school, user, targetDbName }) {
+  if (!serverConfig.jwtUserSecret) {
+    return null;
+  }
+  const payload = {
+    id: user.id,
+    username: user.username,
+    role_id: user.role_id,
+    role_name: user.role_name || 'User',
+    db_name: targetDbName,
+    school_id: school.id,
+    school_name: school.school_name,
+    school_type: school.type,
+    school_logo: school.logo || null,
+    institute_number: school.institute_number,
+  };
+  const token = jwt.sign(payload, serverConfig.jwtUserSecret, {
+    expiresIn: serverConfig.jwtExpiresIn || '7d',
+  });
+  res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
+  return token;
+}
+
 module.exports = {
   issueTenantSessionForUser,
+  refreshTenantJwtCookie,
   AUTH_COOKIE_NAME,
   SESSION_COOKIE_NAME,
   getAuthCookieOptions,

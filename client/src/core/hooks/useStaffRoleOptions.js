@@ -57,10 +57,23 @@ export function useStaffRoleOptions() {
     return id != null ? String(id) : null;
   }, [userRoles]);
 
+  /** Login role for teaching staff (excluded from dropdown but synced from designation). */
+  const teacherRoleId = useMemo(() => {
+    const row = userRoles.find((r) => {
+      const name = String(r.originalData?.role_name ?? r.roleName ?? '')
+        .trim()
+        .toLowerCase();
+      return name === 'teacher';
+    });
+    const id = row?.originalData?.id;
+    return id != null ? String(id) : null;
+  }, [userRoles]);
+
   return {
     roleOptions,
     administrativeRoleId,
     driverRoleId,
+    teacherRoleId,
     loading,
     error,
     refetch,

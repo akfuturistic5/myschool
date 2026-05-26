@@ -12,8 +12,8 @@ const {
 const {
   LEAVE_APPROVER_ROLES,
   LEAVE_LIST_ALL_ROLES,
+  LEAVE_TYPE_MANAGER_ROLES,
   ALL_AUTHENTICATED_ROLES,
-  ADMIN_DASHBOARD_ROLES,
 } = require('../config/roles');
 const {
   getLeaveTypes,
@@ -35,10 +35,10 @@ const router = express.Router();
 
 // GET /api/leave-applications/leave-types - all leave types (public for dropdown)
 router.get('/leave-types', requireRole(ALL_AUTHENTICATED_ROLES), getLeaveTypes);
-router.get('/leave-types/admin', protectApi, requireRole(ADMIN_DASHBOARD_ROLES), getLeaveTypesAdmin);
-router.post('/leave-types', protectApi, requireRole(ADMIN_DASHBOARD_ROLES), validate(createLeaveTypeSchema), createLeaveType);
-router.put('/leave-types/:id', protectApi, requireRole(ADMIN_DASHBOARD_ROLES), validate(updateLeaveTypeSchema, 'body'), updateLeaveType);
-router.delete('/leave-types/:id', protectApi, requireRole(ADMIN_DASHBOARD_ROLES), deleteLeaveType);
+router.get('/leave-types/admin', protectApi, requireRole(LEAVE_TYPE_MANAGER_ROLES), getLeaveTypesAdmin);
+router.post('/leave-types', protectApi, requireRole(LEAVE_TYPE_MANAGER_ROLES), validate(createLeaveTypeSchema), createLeaveType);
+router.put('/leave-types/:id', protectApi, requireRole(LEAVE_TYPE_MANAGER_ROLES), validate(updateLeaveTypeSchema, 'body'), updateLeaveType);
+router.delete('/leave-types/:id', protectApi, requireRole(LEAVE_TYPE_MANAGER_ROLES), deleteLeaveType);
 
 // POST /api/leave-applications - create leave (requires auth)
 router.post('/', protectApi, requireRole(ALL_AUTHENTICATED_ROLES), validate(createLeaveApplicationSchema), createLeaveApplication);

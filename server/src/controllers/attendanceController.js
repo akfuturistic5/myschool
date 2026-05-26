@@ -711,7 +711,15 @@ const resolveStaffAttendanceScope = async (req, { params, where }) => {
   const requestedStaffId = parseOptionalPositiveInt(req.query.staff_id);
   let nextWhere = where;
 
-  if (isTeacherRole(ctx) && !isAdmin(ctx)) {
+  const isHeadmaster =
+    ctx.roleId === ROLES.ADMIN ||
+    ['admin', 'headmaster', 'administrator'].includes(ctx.roleName);
+  const isAdministrativeClerk =
+    ctx.roleId === ROLES.ADMINISTRATIVE || ctx.roleName === 'administrative';
+  const mustScopeToOwnStaff =
+    (isTeacherRole(ctx) && !isAdmin(ctx)) || (isAdministrativeClerk && !isHeadmaster);
+
+  if (mustScopeToOwnStaff) {
     const { staffIds } = await getTeacherIdentity(req.user?.id);
     if (!staffIds.length) {
       return {
@@ -1545,15 +1553,38 @@ const getMyAttendance = async (req, res) => {
     const daysRaw = Number(req.query?.days);
     const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.min(daysRaw, 365) : 30;
 
+    const ctx = getAuthContext(req);
+    let staffId = ctx.staffId;
+    if (!staffId) {
+      const staffRes = await query(
+        `SELECT st.id, u.first_name, u.last_name
+         FROM staff st
+         INNER JOIN users u ON u.id = st.user_id
+         WHERE st.user_id = $1
+           AND st.deleted_at IS NULL
+           AND LOWER(TRIM(COALESCE(NULLIF(TRIM(st.status), ''), 'Active'))) = 'active'
+         ORDER BY st.id ASC
+         LIMIT 1`,
+        [userId]
+      );
+      if (!staffRes.rows.length) {
+        return success(res, 200, 'My attendance fetched successfully', {
+          staff: null,
+        });
+      }
+      staffId = Number(staffRes.rows[0].id);
+    }
+
     const staffRes = await query(
       `SELECT st.id, u.first_name, u.last_name
        FROM staff st
        INNER JOIN users u ON u.id = st.user_id
-       WHERE st.user_id = $1
+       WHERE st.id = $1
+         AND st.user_id = $2
          AND st.deleted_at IS NULL
          AND LOWER(TRIM(COALESCE(NULLIF(TRIM(st.status), ''), 'Active'))) = 'active'
        LIMIT 1`,
-      [userId]
+      [staffId, userId]
     );
 
     if (!staffRes.rows.length) {
@@ -1562,7 +1593,7 @@ const getMyAttendance = async (req, res) => {
       });
     }
 
-    const staffId = Number(staffRes.rows[0].id);
+    staffId = Number(staffRes.rows[0].id);
     const staffName = [staffRes.rows[0].first_name, staffRes.rows[0].last_name].filter(Boolean).join(' ').trim();
     const staffRemarkColumn = await resolveStaffAttendanceRemarkColumn();
 
@@ -1587,7 +1618,10 @@ const getMyAttendance = async (req, res) => {
         params
       );
 
-      const rows = rowsRes.rows || [];
+      const rows = (rowsRes.rows || []).map((row) => ({
+        ...row,
+        status: normalizeAttendanceStatusForApi(row.status) || row.status,
+      }));
       const summary = buildSummaryFromRows(rows);
       const today = rows.find((row) => String(row.attendance_date) === new Date().toISOString().slice(0, 10)) || null;
 

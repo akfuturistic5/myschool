@@ -11,7 +11,7 @@ import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
 import { useLeaveApplications } from "../../../../core/hooks/useLeaveApplications";
 import { useLeaveTypes } from "../../../../core/hooks/useLeaveTypes";
 import { apiService } from "../../../../core/services/apiService";
-import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
+import { isHeadmasterRole } from "../../../../core/utils/roleUtils";
 import { parseFetchErrorMessage } from "../../../../core/utils/parseFetchErrorMessage";
 
 const toYmd = (dateStr: any) => {
@@ -48,7 +48,7 @@ const ApproveRequest = () => {
   const roleName = String(currentUser?.role_name || currentUser?.role || "").toLowerCase();
   const roleId = Number(currentUser?.user_role_id);
   const isTeacher = roleId === 2 || roleName === "teacher" || roleName.includes("teacher");
-  const canUseAdminList = isTeacher || isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser);
+  const canUseAdminList = isTeacher || isHeadmasterRole(currentUser);
   const applicantType = isTeacher ? "student" : "staff";
 
   const { leaveTypes } = useLeaveTypes({ applicableFor: isTeacher ? "student" : "staff" });

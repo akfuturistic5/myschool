@@ -22,16 +22,13 @@ const TooltipOption = ({
           placement="top"
           overlay={<Tooltip id="tooltip-top">Refresh</Tooltip>}
         >
-          <Link
-            to="#"
+          <button
+            type="button"
             className="btn btn-outline-light bg-white btn-icon me-1"
-            onClick={(e) => {
-              e.preventDefault();
-              onRefresh?.();
-            }}
+            onClick={() => onRefresh?.()}
           >
             <i className="ti ti-refresh" />
-          </Link>
+          </button>
         </OverlayTrigger>
       </div>
       <div className="pe-1 mb-2">

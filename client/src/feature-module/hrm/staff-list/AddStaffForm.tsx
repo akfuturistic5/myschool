@@ -19,6 +19,10 @@ import {
   buildDesignationSelectOptions,
   resolveDesignationAfterDepartmentChange,
 } from "../../../core/utils/departmentDesignationUtils";
+import {
+  designationNameIsTeacher,
+  resolveStaffFormRoleId,
+} from "../../../core/utils/staffDesignationRoleUtils";
 
 const genderOptions: Option[] = [
   { value: "male", label: "Male" },
@@ -66,13 +70,7 @@ export default function AddStaffForm() {
   const { departments, loading: departmentsLoading, error: departmentsError } = useDepartments();
   const { designations, loading: designationsLoading, error: designationsError } = useDesignations();
   const { bloodGroups, loading: bloodGroupsLoading, error: bloodGroupsError } = useBloodGroups();
-  const {
-    roleOptions,
-    administrativeRoleId,
-    driverRoleId,
-    loading: rolesLoading,
-    error: rolesError,
-  } = useStaffRoleOptions();
+  const { administrativeRoleId, driverRoleId, teacherRoleId } = useStaffRoleOptions();
 
   const [owner, setOwner] = useState<string[]>([]);
   const [firstName, setFirstName] = useState("");
@@ -85,7 +83,6 @@ export default function AddStaffForm() {
   const [gender, setGender] = useState<string | null>(null);
   const [departmentId, setDepartmentId] = useState<string | null>(null);
   const [designationId, setDesignationId] = useState<string | null>(null);
-  const [roleId, setRoleId] = useState<string | null>(null);
   const [bloodGroupId, setBloodGroupId] = useState<string | null>(null);
   const [maritalStatus, setMaritalStatus] = useState<string | null>(null);
   const [fatherName, setFatherName] = useState("");
@@ -167,7 +164,7 @@ export default function AddStaffForm() {
 
 
   const metaBusy =
-    departmentsLoading || designationsLoading || bloodGroupsLoading || rolesLoading;
+    departmentsLoading || designationsLoading || bloodGroupsLoading;
 
   const supportStaffDepartmentId = useMemo(() => {
     const row = ((departments as any[]) || []).find(
@@ -176,16 +173,49 @@ export default function AddStaffForm() {
     return row?.originalData?.id != null ? String(row.originalData.id) : null;
   }, [departments]);
 
-  const isDriverSelected = useMemo(() => {
-    if (!designationId) return false;
+  const selectedDesignationName = useMemo(() => {
+    if (!designationId) return "";
     const row = ((designations as any[]) || []).find(
       (d) => String(d.originalData?.id) === designationId
     );
-    const name = String(row?.designation ?? row?.originalData?.designation_name ?? "")
-      .trim()
-      .toLowerCase();
-    return name === "driver" || name === "drivers";
+    return String(row?.designation ?? row?.originalData?.designation_name ?? "");
   }, [designationId, designations]);
+
+  const selectedDepartmentName = useMemo(() => {
+    if (!departmentId) return "";
+    const row = ((departments as any[]) || []).find(
+      (d) => String(d.originalData?.id) === departmentId
+    );
+    return String(row?.department ?? row?.originalData?.department_name ?? "");
+  }, [departmentId, departments]);
+
+  const isDriverSelected = useMemo(() => {
+    const name = selectedDesignationName.trim().toLowerCase();
+    return name === "driver" || name === "drivers";
+  }, [selectedDesignationName]);
+
+  const isTeacherSelected = useMemo(
+    () =>
+      designationNameIsTeacher(selectedDesignationName, selectedDepartmentName),
+    [selectedDesignationName, selectedDepartmentName]
+  );
+
+  const resolvedLoginRoleId = useMemo(() => {
+    if (!designationId) return null;
+    return resolveStaffFormRoleId({
+      designationName: selectedDesignationName,
+      storedRoleId: null,
+      teacherRoleId,
+      driverRoleId,
+      administrativeRoleId,
+    });
+  }, [
+    designationId,
+    selectedDesignationName,
+    teacherRoleId,
+    driverRoleId,
+    administrativeRoleId,
+  ]);
 
   const onPickResume = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -262,14 +292,6 @@ export default function AddStaffForm() {
     }
   }, [isDriverSelected, supportStaffDepartmentId, designations]);
 
-  useEffect(() => {
-    if (isDriverSelected && driverRoleId) {
-      setRoleId(driverRoleId);
-      return;
-    }
-    if (administrativeRoleId) setRoleId(administrativeRoleId);
-  }, [isDriverSelected, driverRoleId, administrativeRoleId]);
-
   const getMissingPersonalFields = useCallback((): string[] => {
     const m: string[] = [];
     if (!firstName.trim()) m.push("First name");
@@ -277,7 +299,6 @@ export default function AddStaffForm() {
     if (!employeeCode.trim()) m.push("Employee code");
     if (!departmentId) m.push("Department");
     if (!designationId) m.push("Designation");
-    if (!roleId) m.push("Role");
     if (!gender) m.push("Gender");
     if (!phone.trim()) m.push("Primary phone");
     if (!email.trim()) m.push("Email");
@@ -307,7 +328,6 @@ export default function AddStaffForm() {
     employeeCode,
     departmentId,
     designationId,
-    roleId,
     gender,
     phone,
     email,
@@ -358,7 +378,7 @@ export default function AddStaffForm() {
         blood_group_id: bloodGroupId ? Number(bloodGroupId) : null,
         designation_id: designationId ? Number(designationId) : null,
         department_id: departmentId ? Number(departmentId) : null,
-        role_id: roleId ? Number(roleId) : null,
+        role_id: resolvedLoginRoleId ? Number(resolvedLoginRoleId) : null,
         qualification: qualification.trim() || null,
         experience_years: (() => {
           if (!experienceYears.trim()) return null;
@@ -462,7 +482,7 @@ export default function AddStaffForm() {
       bloodGroupId,
       designationId,
       departmentId,
-      roleId,
+      resolvedLoginRoleId,
       qualification,
       experienceYears,
       salary,
@@ -628,24 +648,6 @@ export default function AddStaffForm() {
                       noOptionsMessage={() =>
                         departmentId ? "No designations for this department" : "Select department first"
                       }
-                    />
-                  )}
-                </div>
-              </div>
-              <div className="col-xxl col-xl-3 col-md-6">
-                <div className="mb-3">
-                  <label className="form-label">
-                    Role
-                    <Req />
-                  </label>
-                  {loadOrError(
-                    rolesLoading,
-                    rolesError,
-                    <CommonSelect
-                      className="select"
-                      options={roleOptions}
-                      value={roleId}
-                      onChange={(v) => setRoleId(v)}
                     />
                   )}
                 </div>

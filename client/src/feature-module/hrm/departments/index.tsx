@@ -8,7 +8,12 @@ import { all_routes } from '../../router/all_routes';
 import TooltipOption from '../../../core/common/tooltipOption';
 import { useDepartments } from '../../../core/hooks/useDepartments';
 import { apiService } from '../../../core/services/apiService';
-import { exportToExcel, exportToPDF, printData } from '../../../core/utils/exportUtils';
+import {
+  buildDepartmentExportRows,
+  exportDepartmentsExcel,
+  exportDepartmentsPdf,
+  printDepartmentsTable,
+} from './departmentExport';
 
 const STATUS_FILTER_OPTIONS = [
   { value: '__all__', label: 'All statuses' },
@@ -46,7 +51,7 @@ function closeModalById(modalId: string) {
 
 const Departments = () => {
   const routes = all_routes;
-  const { departments, loading, error, refetch } = useDepartments();
+  const { departments, loading, isRefreshing, error, refetch } = useDepartments();
   const data = departments;
   const [selectedDepartment, setSelectedDepartment] = useState<any>(null);
   const [editDepartmentName, setEditDepartmentName] = useState<string>('');
@@ -71,6 +76,7 @@ const Departments = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+  const exportToolbarRef = useRef<HTMLDivElement | null>(null);
   const [hodSelectOptions, setHodSelectOptions] = useState<{ value: string; label: string }[]>([
     { value: '', label: '— No head assigned —' },
   ]);
@@ -161,47 +167,86 @@ const Departments = () => {
     return rows;
   }, [data, filterDeptId, filterStatus, tableSort]);
 
-  const exportColumns = useMemo(
-    () => [
-      { title: 'ID', dataKey: 'id' },
-      { title: 'Department', dataKey: 'department' },
-      { title: 'Code', dataKey: 'code' },
-      { title: 'Head of department', dataKey: 'head' },
-      { title: 'Status', dataKey: 'status' },
-    ],
-    []
-  );
-
-  const exportRows = useMemo(
-    () =>
-      displayData.map((row: any) => ({
-        id: String(row.id ?? ''),
-        department: String(row.department ?? ''),
-        code: row.departmentCode === '—' ? '' : String(row.departmentCode ?? ''),
-        head: row.headOfDepartment === '—' ? '' : String(row.headOfDepartment ?? ''),
-        status: String(row.status ?? ''),
-      })),
+  const departmentExportRows = useMemo(
+    () => buildDepartmentExportRows(displayData),
     [displayData]
   );
 
-  const handleToolbarRefresh = useCallback(() => {
-    void refetch();
+  const exportFileStamp = () => new Date().toISOString().slice(0, 10);
+
+  const closeExportDropdown = () => {
+    const toggle = exportToolbarRef.current?.querySelector(
+      '[data-bs-toggle="dropdown"]'
+    ) as HTMLElement | null;
+    if (!toggle) return;
+    const bs = (window as { bootstrap?: { Dropdown?: { getInstance: (el: Element) => { hide: () => void } } } })
+      .bootstrap;
+    const instance = bs?.Dropdown?.getInstance(toggle);
+    instance?.hide();
+  };
+
+  const handleToolbarRefresh = useCallback(async () => {
+    try {
+      await refetch();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to refresh departments.';
+      alert(msg);
+    }
   }, [refetch]);
 
   const handleExportExcel = useCallback(() => {
-    if (!exportRows.length) return;
-    exportToExcel(exportRows, 'departments-list', 'Departments');
-  }, [exportRows]);
+    try {
+      if (!departmentExportRows.length) {
+        alert(
+          error
+            ? 'Cannot export: departments failed to load. Use Retry or refresh.'
+            : 'No departments to export. Adjust filters or add departments first.'
+        );
+        return;
+      }
+      exportDepartmentsExcel(`departments-${exportFileStamp()}`, departmentExportRows);
+      closeExportDropdown();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Excel export failed.');
+    }
+  }, [departmentExportRows, error]);
 
   const handleExportPdf = useCallback(() => {
-    if (!exportRows.length) return;
-    exportToPDF(exportRows, 'Departments', 'departments-list', exportColumns);
-  }, [exportRows, exportColumns]);
+    try {
+      if (!departmentExportRows.length) {
+        alert(
+          error
+            ? 'Cannot export: departments failed to load. Use Retry or refresh.'
+            : 'No departments to export. Adjust filters or add departments first.'
+        );
+        return;
+      }
+      exportDepartmentsPdf(
+        'Departments',
+        `departments-${exportFileStamp()}`,
+        departmentExportRows
+      );
+      closeExportDropdown();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'PDF export failed.');
+    }
+  }, [departmentExportRows, error]);
 
   const handlePrint = useCallback(() => {
-    if (!exportRows.length) return;
-    printData('Departments', exportColumns, exportRows);
-  }, [exportRows, exportColumns]);
+    try {
+      if (!departmentExportRows.length) {
+        alert(
+          error
+            ? 'Cannot print: departments failed to load. Use Retry or refresh.'
+            : 'No departments to print. Adjust filters or add departments first.'
+        );
+        return;
+      }
+      printDepartmentsTable('Departments', departmentExportRows);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Print failed.');
+    }
+  }, [departmentExportRows, error]);
 
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
@@ -388,12 +433,21 @@ const Departments = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
+            <div ref={exportToolbarRef} className="d-flex align-items-center flex-wrap">
             <TooltipOption
               onRefresh={handleToolbarRefresh}
               onPrint={handlePrint}
               onExportPdf={handleExportPdf}
               onExportExcel={handleExportExcel}
             />
+            {isRefreshing && (
+              <span
+                className="spinner-border spinner-border-sm text-primary mb-2 me-2"
+                role="status"
+                aria-label="Refreshing departments"
+              />
+            )}
+            </div>
               <div className="mb-2">
                 <Link
                   to="#"

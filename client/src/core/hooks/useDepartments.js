@@ -1,14 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/apiService';
 
 export const useDepartments = () => {
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
-  const fetchDepartments = async () => {
+  const fetchDepartments = useCallback(async (options = {}) => {
+    const silent = options.silent === true;
     try {
-      setLoading(true);
+      if (silent) {
+        setIsRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
 
       const response = await apiService.getDepartments();
@@ -64,18 +70,23 @@ export const useDepartments = () => {
       console.error('Error fetching departments:', err);
       setError(err.message || 'Failed to fetch departments data');
     } finally {
-      setLoading(false);
+      if (silent) {
+        setIsRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchDepartments();
-  }, []);
+  }, [fetchDepartments]);
 
   return {
     departments,
     loading,
+    isRefreshing,
     error,
-    refetch: fetchDepartments,
+    refetch: () => fetchDepartments({ silent: true }),
   };
 };
