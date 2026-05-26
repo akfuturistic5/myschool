@@ -314,6 +314,12 @@ export function canAccessPath(path: string, role: RoleInput, explicitRoleId?: nu
     return isHeadmasterRole(role, explicitRoleId) || isAdministrativeRole(role, explicitRoleId);
   }
 
+  /** Personal Todo — staff only (not student/parent). */
+  if (path === all_routes.todo) {
+    const scope = getRoleScope(role, explicitRoleId);
+    return scope !== 'student' && scope !== 'parent';
+  }
+
   /** Academic Years module: Headmaster + Administrative only (not teachers/students/parents). */
   const academicYearsBase = all_routes.academicYears;
   if (

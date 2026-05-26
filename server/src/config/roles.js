@@ -102,6 +102,15 @@ const PARENT_HOMEWORK_ROLES = [ROLES.PARENT, ROLES.GUARDIAN];
 /** Help center & support tickets (Headmaster + Administrative) */
 const SUPPORT_ACCESS_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 
+/** Personal todo module — staff roles only (excludes student & parent) */
+const TODO_ACCESS_ROLES = [
+  ROLES.ADMIN,
+  ROLES.ADMINISTRATIVE,
+  ROLES.TEACHER,
+  ROLES.GUARDIAN,
+  ROLES.DRIVER,
+];
+
 module.exports = {
   ROLES,
   ADMIN_ROLE_IDS,
@@ -130,4 +139,5 @@ module.exports = {
   STUDENT_HOMEWORK_ROLES,
   PARENT_HOMEWORK_ROLES,
   SUPPORT_ACCESS_ROLES,
+  TODO_ACCESS_ROLES,
 };
