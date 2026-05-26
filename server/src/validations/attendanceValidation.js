@@ -1,18 +1,18 @@
 const Joi = require('joi');
+const { todayLocalYmd } = require('../utils/dateOnly');
 
 const ENTITY_TYPES = ['student', 'staff'];
 const STATUS_TYPES = ['present', 'absent', 'late', 'half_day', 'holiday', 'on_leave', 'excused'];
 
+/** Calendar YYYY-MM-DD; must not be after server's local today (matches attendance reports/marking). */
 const parseDate = Joi.string()
   .pattern(/^\d{4}-\d{2}-\d{2}$/)
   .custom((value, helpers) => {
-    const parsed = new Date(`${value}T00:00:00.000Z`);
-    if (Number.isNaN(parsed.getTime())) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
       return helpers.error('any.invalid');
     }
-    const today = new Date();
-    const utcToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-    if (parsed > utcToday) {
+    const today = todayLocalYmd();
+    if (value > today) {
       return helpers.message('attendanceDate cannot be in the future');
     }
     return value;
@@ -67,6 +67,7 @@ const dayWiseQuerySchema = Joi.object({
   class_id: Joi.number().integer().positive().allow(null, ''),
   section_id: Joi.number().integer().positive().allow(null, ''),
   department_id: Joi.number().integer().positive().allow(null, ''),
+  designation_id: Joi.number().integer().positive().allow(null, ''),
   academic_year_id: Joi.number().integer().positive().allow(null, ''),
 });
 

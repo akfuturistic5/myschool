@@ -9,11 +9,13 @@ import PredefinedDateRanges from "../../../core/common/datePicker";
 import TooltipOption from "../../../core/common/tooltipOption";
 import { all_routes } from "../../router/all_routes";
 import { useStudents } from "../../../core/hooks/useStudents";
+import { useStaff } from "../../../core/hooks/useStaff";
+import { useTeachers } from "../../../core/hooks/useTeachers";
 import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
 import { useLeaveTypes } from "../../../core/hooks/useLeaveTypes";
 import { selectUser } from "../../../core/data/redux/authSlice";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
-import { isAdministrativeRole, isHeadmasterRole } from "../../../core/utils/roleUtils";
+import { isAdministrativeRole, isHeadmasterRole, isTeacherRole } from "../../../core/utils/roleUtils";
 import type { Dayjs } from "dayjs";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
@@ -33,26 +35,80 @@ const leaveBucketFromName = (name: unknown) => {
   return null;
 };
 
+const emptyLeaveFields = () => ({
+  leaveType: "—",
+  leaveDate: "—",
+  noOfDays: 0,
+  applyOn: "—",
+  status: "—",
+  description: "—",
+  leaveStartRaw: "",
+});
+
+const groupLeavesById = (leaves: any[], idKey: string) => {
+  const map = new Map<number, any[]>();
+  (Array.isArray(leaves) ? leaves : []).forEach((leave) => {
+    const id = Number(leave[idKey]);
+    if (!Number.isFinite(id)) return;
+    if (!map.has(id)) map.set(id, []);
+    map.get(id)!.push(leave);
+  });
+  return map;
+};
+
 const LeaveReport = () => {
   const routes = all_routes;
   const filterMenuRef = useRef<HTMLDivElement | null>(null);
   const user = useSelector(selectUser);
   const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const canUseAdminList = isHeadmasterRole(user);
-  const isOwnLeavesOnly = isAdministrativeRole(user);
+  const isAdminViewer = isHeadmasterRole(user) || isAdministrativeRole(user);
+  const canUseAdminList = isAdminViewer || isTeacherRole(user);
   const [activeTab, setActiveTab] = useState<"teacher" | "student">("teacher");
   const { students, loading: studentsLoading, error: studentsError } = useStudents();
-  const {
-    leaveApplications,
-    loading: applicationsLoading,
-    error: applicationsError,
-    refetch: refetchApplications,
-  } = useLeaveApplications({
+  const { staffList, loading: staffListLoading, error: staffListError } = useStaff({
+    enabled: isAdminViewer,
+  });
+  const { teachers, loading: teachersLoading, error: teachersError } = useTeachers({
+    skip: isAdminViewer,
+  });
+  const leaveFetchOptions = {
     limit: 1000,
     canUseAdminList,
-    studentOnly: isOwnLeavesOnly,
-    academicYearId,
+    studentOnly: false,
+    academicYearId: null as number | null,
+    sortBy: "created_at" as const,
+    sortOrder: "desc" as const,
+  };
+  const {
+    leaveApplications: staffLeaveApplications,
+    loading: staffLeavesLoading,
+    error: staffLeavesError,
+    refetch: refetchStaffLeaves,
+  } = useLeaveApplications({
+    ...leaveFetchOptions,
+    applicantType: "staff",
   });
+  const {
+    leaveApplications: studentLeaveApplications,
+    loading: studentLeavesLoading,
+    error: studentLeavesError,
+    refetch: refetchStudentLeaves,
+  } = useLeaveApplications({
+    ...leaveFetchOptions,
+    applicantType: "student",
+  });
+  const leaveApplications = useMemo(
+    () => [...staffLeaveApplications, ...studentLeaveApplications],
+    [staffLeaveApplications, studentLeaveApplications]
+  );
+  const applicationsLoading =
+    staffLeavesLoading || studentLeavesLoading || staffListLoading || teachersLoading;
+  const applicationsError =
+    staffLeavesError || studentLeavesError || staffListError || teachersError;
+  const refetchApplications = () => {
+    refetchStaffLeaves();
+    refetchStudentLeaves();
+  };
   const {
     leaveTypes,
     loading: leaveTypesLoading,
@@ -96,35 +152,43 @@ const LeaveReport = () => {
     return next;
   }, [leaveTypes]);
 
+  const staffRoster = useMemo(() => {
+    if (isAdminViewer && Array.isArray(staffList) && staffList.length > 0) {
+      return staffList
+        .map((s: any) => ({
+          staffId: s.dbId,
+          name: s.name || "—",
+          role: s.designation || s.role || "Staff",
+          avatar: s.img || "",
+        }))
+        .filter((s: any) => s.staffId != null);
+    }
+    return (Array.isArray(teachers) ? teachers : [])
+      .map((t: any) => ({
+        staffId: Number(t.staff_id ?? t.id),
+        name: [t.first_name, t.last_name].filter(Boolean).join(" ").trim() || t.name || "—",
+        role: t.designation_name || t.designation || "Teacher",
+        avatar: t.photo_url || t.img || "",
+      }))
+      .filter((s: any) => Number.isFinite(s.staffId));
+  }, [isAdminViewer, staffList, teachers]);
+
+  const leavesByStaffId = useMemo(
+    () => groupLeavesById(staffLeaveApplications, "staffId"),
+    [staffLeaveApplications]
+  );
+
   const teacherLeaveRows = useMemo(() => {
-    const rows = Array.isArray(leaveApplications) ? leaveApplications : [];
-    const teacherRows = rows.filter(
-      (row: any) => row.staffId != null || String(row.applicantType || "").toLowerCase() === "staff"
-    );
     const usageByStaff = new Map<
       string,
       { medical: number; casual: number; maternity: number; paternity: number; special: number }
     >();
-    teacherRows.forEach((row: any) => {
-      const staffKey = String(row.staffId ?? row.name ?? "");
-      if (!staffKey) return;
-      const bucket = leaveBucketFromName(row.leaveType);
-      if (!bucket) return;
-      const days = Number(row.noOfDays || 0);
-      const usage = usageByStaff.get(staffKey) || {
-        medical: 0,
-        casual: 0,
-        maternity: 0,
-        paternity: 0,
-        special: 0,
-      };
-      usage[bucket] += Number.isFinite(days) && days > 0 ? days : 0;
-      usageByStaff.set(staffKey, usage);
-    });
-    return teacherRows
-      .map((row: any, index: number) => {
-        const dateRaw = row.startDate || "";
-        const staffKey = String(row.staffId ?? row.name ?? "");
+    leavesByStaffId.forEach((leaves, staffId) => {
+      const staffKey = String(staffId);
+      leaves.forEach((row: any) => {
+        const bucket = leaveBucketFromName(row.leaveType);
+        if (!bucket) return;
+        const days = Number(row.noOfDays || 0);
         const usage = usageByStaff.get(staffKey) || {
           medical: 0,
           casual: 0,
@@ -132,32 +196,76 @@ const LeaveReport = () => {
           paternity: 0,
           special: 0,
         };
-        return {
-          key: row.key || `teacher-leave-report-${index}`,
-          staffId: row.staffId,
-          name: row.name || "—",
-          role: row.role || "Teacher",
-          leaveType: row.leaveType || "—",
-          leaveDate: row.leaveDate || "—",
-          noOfDays: Number(row.noOfDays || 0),
-          applyOn: row.applyOn || "—",
-          status: row.status || "pending",
-          description: row.description || "—",
-          avatar: row.photoUrl || "",
-          leaveStartRaw: dateRaw ? new Date(dateRaw).toISOString().slice(0, 10) : "",
-          medicalUsed: usage.medical,
-          medicalAvailable: Math.max(teacherLeaveTypeMax.medical - usage.medical, 0),
-          casualUsed: usage.casual,
-          casualAvailable: Math.max(teacherLeaveTypeMax.casual - usage.casual, 0),
-          maternityUsed: usage.maternity,
-          maternityAvailable: Math.max(teacherLeaveTypeMax.maternity - usage.maternity, 0),
-          paternityUsed: usage.paternity,
-          paternityAvailable: Math.max(teacherLeaveTypeMax.paternity - usage.paternity, 0),
-          specialUsed: usage.special,
-          specialAvailable: Math.max(teacherLeaveTypeMax.special - usage.special, 0),
-        };
+        usage[bucket] += Number.isFinite(days) && days > 0 ? days : 0;
+        usageByStaff.set(staffKey, usage);
       });
-  }, [leaveApplications, teacherLeaveTypeMax]);
+    });
+
+    const mapLeaveToRow = (staff: any, leave: any, index: number) => {
+      const dateRaw = leave?.startDate || "";
+      const staffKey = String(staff.staffId);
+      const usage = usageByStaff.get(staffKey) || {
+        medical: 0,
+        casual: 0,
+        maternity: 0,
+        paternity: 0,
+        special: 0,
+      };
+      const empty = emptyLeaveFields();
+      return {
+        key: leave?.key || `teacher-leave-report-${staff.staffId}-${index}`,
+        staffId: staff.staffId,
+        name: staff.name,
+        role: staff.role,
+        leaveType: leave?.leaveType || empty.leaveType,
+        leaveDate: leave?.leaveDate || empty.leaveDate,
+        noOfDays: Number(leave?.noOfDays || 0),
+        applyOn: leave?.applyOn || empty.applyOn,
+        status: leave?.status || empty.status,
+        description: leave?.description || empty.description,
+        avatar: leave?.photoUrl || staff.avatar || "",
+        leaveStartRaw: dateRaw ? new Date(dateRaw).toISOString().slice(0, 10) : "",
+        medicalUsed: usage.medical,
+        medicalAvailable: Math.max(teacherLeaveTypeMax.medical - usage.medical, 0),
+        casualUsed: usage.casual,
+        casualAvailable: Math.max(teacherLeaveTypeMax.casual - usage.casual, 0),
+        maternityUsed: usage.maternity,
+        maternityAvailable: Math.max(teacherLeaveTypeMax.maternity - usage.maternity, 0),
+        paternityUsed: usage.paternity,
+        paternityAvailable: Math.max(teacherLeaveTypeMax.paternity - usage.paternity, 0),
+        specialUsed: usage.special,
+        specialAvailable: Math.max(teacherLeaveTypeMax.special - usage.special, 0),
+        hasLeave: Boolean(leave),
+      };
+    };
+
+    if (staffRoster.length > 0) {
+      const rows: any[] = [];
+      staffRoster.forEach((staff: any) => {
+        const leaves = leavesByStaffId.get(Number(staff.staffId)) || [];
+        if (leaves.length === 0) {
+          rows.push(mapLeaveToRow(staff, null, 0));
+        } else {
+          leaves.forEach((leave: any, idx: number) => rows.push(mapLeaveToRow(staff, leave, idx)));
+        }
+      });
+      return rows;
+    }
+
+    return (Array.isArray(staffLeaveApplications) ? staffLeaveApplications : []).map(
+      (row: any, index: number) =>
+        mapLeaveToRow(
+          {
+            staffId: row.staffId,
+            name: row.name || "—",
+            role: row.role || "Teacher",
+            avatar: row.photoUrl || "",
+          },
+          row,
+          index
+        )
+    );
+  }, [staffRoster, leavesByStaffId, staffLeaveApplications, teacherLeaveTypeMax]);
 
   const teacherRoleOptions = useMemo(() => {
     const unique = Array.from(
@@ -195,8 +303,12 @@ const LeaveReport = () => {
   const filteredTeacherRows = useMemo(() => {
     return teacherLeaveRows.filter((row: any) => {
       const roleOk = appliedTeacherRole === "All" || row.role === appliedTeacherRole;
-      const statusOk = appliedTeacherStatus === "All" || String(row.status).toLowerCase() === appliedTeacherStatus;
-      const leaveTypeOk = appliedTeacherLeaveType === "All" || row.leaveType === appliedTeacherLeaveType;
+      const statusOk =
+        appliedTeacherStatus === "All" ||
+        (row.status !== "—" && String(row.status).toLowerCase() === appliedTeacherStatus);
+      const leaveTypeOk =
+        appliedTeacherLeaveType === "All" ||
+        (row.leaveType !== "—" && row.leaveType === appliedTeacherLeaveType);
       const dateOk =
         !selectedDateRange ||
         (row.leaveStartRaw &&
@@ -206,41 +318,56 @@ const LeaveReport = () => {
     });
   }, [appliedTeacherRole, appliedTeacherStatus, appliedTeacherLeaveType, selectedDateRange, teacherLeaveRows]);
 
+  const leavesByStudentId = useMemo(
+    () => groupLeavesById(studentLeaveApplications, "studentId"),
+    [studentLeaveApplications]
+  );
+
   const studentLeaveRows = useMemo(() => {
-    const rows = Array.isArray(leaveApplications) ? leaveApplications : [];
     const studentMap = new Map<number, any>();
     (Array.isArray(students) ? students : []).forEach((student: any) => {
       const id = Number(student.id);
       if (Number.isFinite(id)) studentMap.set(id, student);
     });
 
-    return rows
-      .filter((row: any) => row.studentId != null || String(row.applicantType || "").toLowerCase() === "student")
-      .map((row: any, index: number) => {
-        const student = studentMap.get(Number(row.studentId));
-        const className = student?.class_name || student?.class || "—";
-        const sectionName = student?.section_name || student?.section || "—";
-        const dateRaw = row.startDate || "";
-        return {
-          key: row.key || `student-leave-report-${index}`,
-          studentId: row.studentId,
-          admissionNo: student?.admission_number || "—",
-          rollNo: student?.roll_number || "—",
-          studentName: row.name || "—",
-          className,
-          sectionName,
-          leaveType: row.leaveType || "—",
-          noOfDays: Number(row.noOfDays || 0),
-          leaveDate: row.leaveDate || "—",
-          applyOn: row.applyOn || "—",
-          status: row.status || "pending",
-          description: row.description || "—",
-          avatar: row.photoUrl || student?.photo_url || "",
-          gender: student?.gender || "",
-          leaveStartRaw: dateRaw ? new Date(dateRaw).toISOString().slice(0, 10) : "",
-        };
-      });
-  }, [leaveApplications, students]);
+    const mapLeaveToRow = (student: any, leave: any, index: number) => {
+      const className = student?.class_name || student?.class || "—";
+      const sectionName = student?.section_name || student?.section || "—";
+      const dateRaw = leave?.startDate || "";
+      const empty = emptyLeaveFields();
+      const studentName =
+        [student?.first_name, student?.last_name].filter(Boolean).join(" ").trim() ||
+        student?.name ||
+        leave?.name ||
+        "—";
+      return {
+        key: leave?.key || `student-leave-report-${student?.id ?? "x"}-${index}`,
+        studentId: student?.id ?? leave?.studentId,
+        admissionNo: student?.admission_number || "—",
+        rollNo: student?.roll_number || "—",
+        studentName,
+        className,
+        sectionName,
+        leaveType: leave?.leaveType || empty.leaveType,
+        noOfDays: Number(leave?.noOfDays || 0),
+        leaveDate: leave?.leaveDate || empty.leaveDate,
+        applyOn: leave?.applyOn || empty.applyOn,
+        status: leave?.status || empty.status,
+        description: leave?.description || empty.description,
+        avatar: leave?.photoUrl || student?.photo_url || student?.avatar || "",
+        gender: student?.gender || "",
+        leaveStartRaw: dateRaw ? new Date(dateRaw).toISOString().slice(0, 10) : "",
+        hasLeave: Boolean(leave),
+      };
+    };
+
+    const rows: any[] = [];
+    leavesByStudentId.forEach((leaves, studentId) => {
+      const student = studentMap.get(studentId) || { id: studentId };
+      leaves.forEach((leave: any, idx: number) => rows.push(mapLeaveToRow(student, leave, idx)));
+    });
+    return rows;
+  }, [students, leavesByStudentId]);
 
   const studentClassOptions = useMemo(() => {
     const unique = Array.from(
@@ -294,8 +421,12 @@ const LeaveReport = () => {
     return studentLeaveRows.filter((row: any) => {
       const classOk = appliedStudentClass === "All" || row.className === appliedStudentClass;
       const sectionOk = appliedStudentSection === "All" || row.sectionName === appliedStudentSection;
-      const statusOk = appliedStudentStatus === "All" || String(row.status).toLowerCase() === appliedStudentStatus;
-      const leaveTypeOk = appliedStudentLeaveType === "All" || row.leaveType === appliedStudentLeaveType;
+      const statusOk =
+        appliedStudentStatus === "All" ||
+        (row.status !== "—" && String(row.status).toLowerCase() === appliedStudentStatus);
+      const leaveTypeOk =
+        appliedStudentLeaveType === "All" ||
+        (row.leaveType !== "—" && row.leaveType === appliedStudentLeaveType);
       const dateOk =
         !selectedDateRange ||
         (row.leaveStartRaw &&

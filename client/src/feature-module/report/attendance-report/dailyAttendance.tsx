@@ -27,13 +27,17 @@ const DailyAttendance = () => {
   const isTeacherRole = String(user?.role || "").trim().toLowerCase() === "teacher";
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const [classOptions, setClassOptions] = useState<Array<{ value: string; label: string }>>([{ value: "all", label: "All Classes" }]);
+  const [classOptions, setClassOptions] = useState<Array<{ value: string; label: string }>>([
+    { value: "all", label: "All Classes" },
+  ]);
+  const [sectionLabelById, setSectionLabelById] = useState<Record<string, string>>({});
   const [selectedClassId, setSelectedClassId] = useState<string>("all");
   const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
   const [appliedClassId, setAppliedClassId] = useState<string>("all");
   const [appliedDate, setAppliedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
   const [refreshTick, setRefreshTick] = useState(0);
-  const [reportData, setReportData] = useState<any>({ month: null, days: [], rows: [] });
+  const [rosterRows, setRosterRows] = useState<any[]>([]);
+  const [activeHoliday, setActiveHoliday] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,21 +45,37 @@ const DailyAttendance = () => {
     let cancelled = false;
 
     const fetchFilterOptions = async () => {
+      if (academicYearId == null) {
+        setClassOptions([{ value: "all", label: "All Classes" }]);
+        setSectionLabelById({});
+        return;
+      }
       try {
-        const classesPromise = apiService.getClasses();
-        const classesResult = await classesPromise.catch(() => null);
+        const [classesResult, sectionsResult] = await Promise.allSettled([
+          apiService.getClasses(academicYearId),
+          apiService.getSections(),
+        ]);
         if (cancelled) return;
 
-        const fallbackClasses =
-          academicYearId &&
-          (!Array.isArray(classesResult?.data) || classesResult.data.length === 0)
-            ? await apiService.getClasses().catch(() => null)
+        const classesResponse =
+          classesResult.status === "fulfilled" && Array.isArray(classesResult.value?.data)
+            ? classesResult.value
             : null;
-        const classes = Array.isArray(classesResult?.data)
-          ? classesResult.data
-          : Array.isArray(fallbackClasses?.data)
-            ? fallbackClasses.data
+        const classes =
+          Array.isArray(classesResponse?.data) && classesResponse.data.length > 0
+            ? classesResponse.data
             : [];
+
+        const sections =
+          sectionsResult.status === "fulfilled" && Array.isArray(sectionsResult.value?.data)
+            ? sectionsResult.value.data
+            : [];
+
+        const nextSectionLabels: Record<string, string> = {};
+        sections.forEach((section: any) => {
+          nextSectionLabels[String(section.id)] =
+            section.section_name || `Section ${section.id}`;
+        });
 
         setClassOptions([
           { value: "all", label: "All Classes" },
@@ -64,29 +84,15 @@ const DailyAttendance = () => {
             label: item.class_name || `Class ${item.id}`,
           })),
         ]);
+        setSectionLabelById(nextSectionLabels);
       } catch (err: any) {
         if (!cancelled) {
           setError(err?.message || "Failed to load class options");
           setClassOptions([{ value: "all", label: "All Classes" }]);
+          setSectionLabelById({});
         }
       }
     };
-
-
-    //     setClassOptions([
-    //       { value: "all", label: "All Classes" },
-    //       ...classes.map((item: any) => ({
-    //         value: String(item.id),
-    //         label: item.class_name || `Class ${item.id}`,
-    //       })),
-    //     ]);
-    //   } catch (err: any) {
-    //     if (!cancelled) {
-    //       setError(err?.message || "Failed to load class options");
-    //       setClassOptions([{ value: "all", label: "All Classes" }]);
-    //     }
-    //   }
-    // };
 
     fetchFilterOptions();
     return () => {
@@ -98,21 +104,29 @@ const DailyAttendance = () => {
     let cancelled = false;
 
     const fetchReport = async () => {
+      if (academicYearId == null) {
+        setLoading(false);
+        setError("Select an academic year from the header to load daily attendance.");
+        setRosterRows([]);
+        return;
+      }
       try {
         setLoading(true);
         setError(null);
-        const res = await apiService.getAttendanceReport({
+        const res = await apiService.getAttendanceMarkingRoster("student", {
+          date: appliedDate,
           classId: appliedClassId !== "all" ? appliedClassId : null,
           academicYearId,
-          month: dayjs(appliedDate).format("YYYY-MM"),
         });
         if (!cancelled) {
-          setReportData(res?.data || { month: null, days: [], rows: [] });
+          setRosterRows(Array.isArray(res?.data) ? res.data : []);
+          setActiveHoliday(res?.holiday || null);
         }
       } catch (err: any) {
         if (!cancelled) {
           setError(err?.message || "Failed to fetch daily attendance");
-          setReportData({ month: null, days: [], rows: [] });
+          setRosterRows([]);
+          setActiveHoliday(null);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -124,6 +138,64 @@ const DailyAttendance = () => {
       cancelled = true;
     };
   }, [academicYearId, appliedClassId, appliedDate, refreshTick]);
+
+  const classLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    classOptions.forEach((opt) => {
+      if (opt.value !== "all") map.set(opt.value, opt.label);
+    });
+    return map;
+  }, [classOptions]);
+
+  const resolveDayStatus = (rawStatus: unknown) => {
+    const trimmed = String(rawStatus || "").trim();
+    if (trimmed) return trimmed;
+    if (activeHoliday) return String(activeHoliday).trim();
+    return "absent";
+  };
+
+  const data = useMemo(() => {
+    const grouped = new Map<string, any>();
+
+    rosterRows.forEach((row: any) => {
+      const classId = String(row.class_id ?? "");
+      const sectionId = String(row.section_id ?? "");
+      const groupKey = `${classId || "0"}-${sectionId || "0"}`;
+      const status = resolveDayStatus(row.status);
+
+      const current = grouped.get(groupKey) || {
+        key: groupKey,
+        classId,
+        sectionId,
+        class:
+          classLabelById.get(classId) ||
+          (classId ? `Class ${classId}` : "—"),
+        section:
+          sectionLabelById[sectionId] ||
+          (sectionId ? `Section ${sectionId}` : "—"),
+        present: 0,
+        absent: 0,
+        total: 0,
+      };
+
+      current.total += 1;
+      const bucket = getDailyAttendancePresentAbsentBucket(status);
+      if (bucket === "present_side") current.present += 1;
+      else if (bucket === "absent_side") current.absent += 1;
+
+      grouped.set(groupKey, current);
+    });
+
+    return Array.from(grouped.values())
+      .map((item) => ({
+        ...item,
+        percentage:
+          item.total > 0 ? Number(((item.present / item.total) * 100).toFixed(2)) : 0,
+        absentPercentage:
+          item.total > 0 ? Number(((item.absent / item.total) * 100).toFixed(2)) : 0,
+      }))
+      .sort((a, b) => compareText(a.class, b.class) || compareText(a.section, b.section));
+  }, [activeHoliday, classLabelById, rosterRows, sectionLabelById]);
 
   const handleApplyClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -144,38 +216,6 @@ const DailyAttendance = () => {
   };
 
   const handleRefresh = () => setRefreshTick((prev) => prev + 1);
-
-  const data = useMemo(() => {
-    const dayKey = dayjs(appliedDate).format("YYYY-MM-DD");
-    const grouped = new Map<string, any>();
-
-    (Array.isArray(reportData.rows) ? reportData.rows : []).forEach((row: any) => {
-      const status = row.daily?.[dayKey];
-      const groupKey = row.sectionName || "N/A";
-      const current = grouped.get(groupKey) || {
-        key: groupKey,
-        class: classOptions.find((item) => item.value === selectedClassId)?.label || "—",
-        section: row.sectionName || "N/A",
-        present: 0,
-        absent: 0,
-        total: 0,
-      };
-
-      if (status) {
-        current.total += 1;
-        const bucket = getDailyAttendancePresentAbsentBucket(status);
-        if (bucket === "present_side") current.present += 1;
-        if (bucket === "absent_side") current.absent += 1;
-      }
-      grouped.set(groupKey, current);
-    });
-
-    return Array.from(grouped.values()).map((item) => ({
-      ...item,
-      percentage: item.total > 0 ? Number(((item.present / item.total) * 100).toFixed(2)) : 0,
-      absentPercentage: item.total > 0 ? Number(((item.absent / item.total) * 100).toFixed(2)) : 0,
-    }));
-  }, [appliedDate, classOptions, reportData.rows, selectedClassId]);
 
   const exportColumns = useMemo(
     () => [
@@ -253,12 +293,11 @@ const DailyAttendance = () => {
       render: (value: number) => `${Number(value ?? 0).toFixed(2)}%`,
     },
   ];
+
   return (
     <>
-      {/* Page Wrapper */}
       <div className="page-wrapper">
         <div className="content">
-          {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
               <h3 className="page-title mb-1">Daily Attendance</h3>
@@ -271,7 +310,7 @@ const DailyAttendance = () => {
                     <Link to="#">Report</Link>
                   </li>
                   <li className="breadcrumb-item active" aria-current="page">
-                  Daily Attendance
+                    Daily Attendance
                   </li>
                 </ol>
               </nav>
@@ -285,10 +324,8 @@ const DailyAttendance = () => {
               />
             </div>
           </div>
-          {/* /Page Header */}
-          {/* Filter Section */}
+
           <div className="filter-wrapper">
-            {/* List Tab */}
             <div className="list-tab">
               <ul>
                 <li>
@@ -298,7 +335,9 @@ const DailyAttendance = () => {
                   <Link to={routes.studentAttendanceType}>Students Attendance Type</Link>
                 </li>
                 <li>
-                  <Link to={routes.dailyAttendance} className="active">Daily Attendance</Link>
+                  <Link to={routes.dailyAttendance} className="active">
+                    Daily Attendance
+                  </Link>
                 </li>
                 <li>
                   <Link to={routes.studentDayWise}>Student Day Wise</Link>
@@ -306,12 +345,18 @@ const DailyAttendance = () => {
                 {!isTeacherRole && (
                   <>
                     <li>
-                      <Link to={routes.staffDayWise} className={location.pathname === routes.staffDayWise ? "active" : ""}>
+                      <Link
+                        to={routes.staffDayWise}
+                        className={location.pathname === routes.staffDayWise ? "active" : ""}
+                      >
                         Staff Day Wise
                       </Link>
                     </li>
                     <li>
-                      <Link to={routes.staffReport} className={location.pathname === routes.staffReport ? "active" : ""}>
+                      <Link
+                        to={routes.staffReport}
+                        className={location.pathname === routes.staffReport ? "active" : ""}
+                      >
                         Staff Report
                       </Link>
                     </li>
@@ -319,11 +364,8 @@ const DailyAttendance = () => {
                 )}
               </ul>
             </div>
-            {/* /List Tab */}
           </div>
-          {/* /Filter Section */}
-         
-          {/* Attendance List */}
+
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
               <h4 className="mb-3">Daily Attendance</h4>
@@ -338,7 +380,11 @@ const DailyAttendance = () => {
                     <i className="ti ti-filter me-2" />
                     Filter
                   </Link>
-                  <div className="dropdown-menu drop-width" ref={dropdownMenuRef} onClick={(e) => e.stopPropagation()}>
+                  <div
+                    className="dropdown-menu drop-width"
+                    ref={dropdownMenuRef}
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <form>
                       <div className="d-flex align-items-center border-bottom p-3">
                         <h4>Filter</h4>
@@ -359,11 +405,12 @@ const DailyAttendance = () => {
                           <div className="col-md-12">
                             <div className="mb-3">
                               <label className="form-label">Attendance Date</label>
-
                               <DatePicker
                                 className="form-control datetimepicker"
                                 value={dayjs(selectedDate)}
-                                onChange={(value: Dayjs | null) => setSelectedDate((value || dayjs()).format("YYYY-MM-DD"))}
+                                onChange={(value: Dayjs | null) =>
+                                  setSelectedDate((value || dayjs()).format("YYYY-MM-DD"))
+                                }
                                 allowClear={false}
                                 format="DD-MM-YYYY"
                                 getPopupContainer={() => dropdownMenuRef.current || document.body}
@@ -376,11 +423,7 @@ const DailyAttendance = () => {
                         <Link to="#" className="btn btn-light me-3" onClick={handleResetFilters}>
                           Reset
                         </Link>
-                        <Link
-                          to="#"
-                          className="btn btn-primary"
-                          onClick={handleApplyClick}
-                        >
+                        <Link to="#" className="btn btn-primary" onClick={handleApplyClick}>
                           Apply
                         </Link>
                       </div>
@@ -402,18 +445,17 @@ const DailyAttendance = () => {
                   </div>
                   <p className="mt-2 mb-0">Loading daily attendance...</p>
                 </div>
+              ) : data.length === 0 ? (
+                <div className="text-center py-5 text-muted">No attendance data for this date.</div>
               ) : (
                 <Table dataSource={data} columns={columns} Selection={false} />
               )}
             </div>
           </div>
-          {/* /Attendance List */}
         </div>
       </div>
-      {/* /Page Wrapper */}
     </>
   );
 };
 
 export default DailyAttendance;
-

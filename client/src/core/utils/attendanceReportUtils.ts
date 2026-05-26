@@ -139,6 +139,29 @@ const toReportDateKey = (value: unknown): string => {
   return `${y}-${m}-${day}`;
 };
 
+function todayLocalYmd(): string {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/** For the current calendar month, only show day columns from the 1st through today. */
+export function capMonthlyReportDaysToToday(
+  days: ReportDayMeta[],
+  month?: string | null
+): ReportDayMeta[] {
+  const list = Array.isArray(days) ? days : [];
+  const monthKey = String(month || "").match(/^\d{4}-\d{2}/)?.[0];
+  if (!monthKey) return list;
+  const today = todayLocalYmd();
+  if (monthKey !== today.slice(0, 7)) return list;
+  return list.filter((d) => {
+    const date = toReportDateKey(d.date);
+    return date && date <= today;
+  });
+}
+
 /** Fill empty calendar cells with holiday (H) for monthly student reports — mirrors staff report behaviour. */
 export function applyHolidayDatesToMonthlyGrid(
   rows: MonthlyAttendanceGridRow[],
@@ -162,6 +185,42 @@ export function applyHolidayDatesToMonthlyGrid(
     });
     return { ...row, daily, summary: summaryFromDaily(daily) };
   });
+}
+
+/** Unmarked school days (not holiday) count as absent for monthly grids. */
+export function fillAbsentForUnmarkedSchoolDays(
+  rows: MonthlyAttendanceGridRow[],
+  days: ReportDayMeta[],
+  holidayDates: unknown[]
+): MonthlyAttendanceGridRow[] {
+  const holidaySet = new Set(
+    (Array.isArray(holidayDates) ? holidayDates : [])
+      .map((d) => toReportDateKey(d))
+      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+  );
+
+  return rows.map((row) => {
+    const daily = { ...row.daily };
+    days.forEach((d) => {
+      const date = toReportDateKey(d.date);
+      if (!date) return;
+      const existing = String(daily[date] || "").trim();
+      if (!existing && !holidaySet.has(date)) {
+        daily[date] = "absent";
+      }
+    });
+    return { ...row, daily, summary: summaryFromDaily(daily) };
+  });
+}
+
+export function prepareMonthlyAttendanceGrid(
+  rows: unknown[],
+  days: ReportDayMeta[],
+  holidayDates: unknown[]
+): MonthlyAttendanceGridRow[] {
+  const normalized = normalizeMonthlyAttendanceGridRows(rows);
+  const withHolidays = applyHolidayDatesToMonthlyGrid(normalized, days, holidayDates);
+  return fillAbsentForUnmarkedSchoolDays(withHolidays, days, holidayDates);
 }
 
 export function normalizeMonthlyAttendanceGridRows(rows: unknown[]): MonthlyAttendanceGridRow[] {

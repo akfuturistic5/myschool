@@ -193,6 +193,7 @@ import StudentDayWise from "../report/attendance-report/studentDayWise";
 import StaffDayWise from "../report/attendance-report/staffDayWiseLive";
 import StaffReport from "../report/attendance-report/staffReportLive";
 import ClassReport from "../report/class-report/classReport";
+import ClassReportDetail from "../report/class-report/classReportDetail";
 import FeesReport from "../report/fees-report/feesReport";
 import GradeReport from "../report/grade-report/gradeReport";
 import LeaveReport from "../report/leave-report/leaveReport";
@@ -1629,6 +1630,11 @@ export const publicRoutes = [
   {
     path: routes.classReport,
     element: guardReportsModule(<ClassReport />),
+    route: Route,
+  },
+  {
+    path: `${routes.classReportDetail}/:classId/:sectionId`,
+    element: guardReportsModule(<ClassReportDetail />),
     route: Route,
   },
   {

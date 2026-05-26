@@ -276,8 +276,12 @@ class ApiService {
   }
 
   // Classes
-  async getClasses() {
-    return this.makeRequest('/classes');
+  /**
+   * @param {number|string|null} [academicYearId=null]
+   */
+  async getClasses(academicYearId = null) {
+    const qs = academicYearId != null && academicYearId !== '' ? `?academic_year_id=${academicYearId}` : '';
+    return this.makeRequest(`/classes${qs}`);
   }
 
   async getClassById(id) {
@@ -1128,6 +1132,7 @@ class ApiService {
     if (params.classId != null) search.set('class_id', String(params.classId));
     if (params.sectionId != null) search.set('section_id', String(params.sectionId));
     if (params.departmentId != null) search.set('department_id', String(params.departmentId));
+    if (params.designationId != null) search.set('designation_id', String(params.designationId));
     if (params.academicYearId != null) search.set('academic_year_id', String(params.academicYearId));
     const qs = search.toString();
     return this.makeRequest(`/attendance/day-wise/${entityType}${qs ? `?${qs}` : ''}`);

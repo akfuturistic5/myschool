@@ -21,8 +21,9 @@ import {
   isHolidayAttendanceCompound,
 } from "../../../core/utils/attendanceReportStatus";
 import {
-  applyHolidayDatesToMonthlyGrid,
+  capMonthlyReportDaysToToday,
   normalizeMonthlyAttendanceGridRows,
+  prepareMonthlyAttendanceGrid,
 } from "../../../core/utils/attendanceReportUtils";
 import {
   buildClassOptionsFromSectionAssignments,
@@ -358,27 +359,30 @@ const StudentAttendance = () => {
   }, [visibleRows, rowState]);
 
   const studentReportData = useMemo(() => {
-    const days = Array.isArray(reportData?.days) ? reportData.days : [];
-    const holidayDates = Array.isArray(reportData?.holiday_dates) ? reportData.holiday_dates : [];
-    const rows = applyHolidayDatesToMonthlyGrid(
-      normalizeMonthlyAttendanceGridRows(reportData?.rows),
-      days,
-      holidayDates
+    const days = capMonthlyReportDaysToToday(
+      reportData?.days,
+      reportData?.month || attendanceMonth
     );
+    const holidayDates = Array.isArray(reportData?.holiday_dates) ? reportData.holiday_dates : [];
+    const rows = prepareMonthlyAttendanceGrid(reportData?.rows, days, holidayDates);
     return { days, rows };
-  }, [reportData]);
+  }, [reportData, attendanceMonth]);
 
   const staffReportData = useMemo(() => {
     const safeMonth = /^\d{4}-\d{2}$/.test(attendanceMonth) ? attendanceMonth : getTodayLocalYMD().slice(0, 7);
     const monthStart = new Date(`${safeMonth}-01T00:00:00.000Z`);
     if (Number.isNaN(monthStart.getTime())) return { days: [], rows: [] as any[] };
     const monthEnd = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
+    const todayYmd = getTodayLocalYMD();
+    const isCurrentMonth = safeMonth === todayYmd.slice(0, 7);
     const days: Array<{ day: number; date: string; weekdayShort: string }> = [];
     const cursor = new Date(monthStart);
     while (cursor < monthEnd) {
+      const date = cursor.toISOString().slice(0, 10);
+      if (isCurrentMonth && date > todayYmd) break;
       days.push({
         day: cursor.getUTCDate(),
-        date: cursor.toISOString().slice(0, 10),
+        date,
         weekdayShort: cursor.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }),
       });
       cursor.setUTCDate(cursor.getUTCDate() + 1);

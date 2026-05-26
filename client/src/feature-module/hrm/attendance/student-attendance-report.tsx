@@ -20,8 +20,8 @@ import {
   isHolidayAttendanceCompound,
 } from "../../../core/utils/attendanceReportStatus";
 import {
-  applyHolidayDatesToMonthlyGrid,
-  normalizeMonthlyAttendanceGridRows,
+  capMonthlyReportDaysToToday,
+  prepareMonthlyAttendanceGrid,
 } from "../../../core/utils/attendanceReportUtils";
 import {
   buildClassOptionsFromSectionAssignments,
@@ -158,6 +158,13 @@ const StudentAttendanceReport = () => {
   }, [isTeacher, sectionId, sectionOptions]);
 
   const loadReportData = useCallback(async () => {
+    if (academicYearId == null) {
+      setLoading(false);
+      setError("Select an academic year from the header to load the attendance report.");
+      setDayRows([]);
+      setReportData({ month: attendanceMonth, days: [], rows: [] });
+      return;
+    }
     if (isTeacher && (classId == null || sectionId == null)) {
       setDayRows([]);
       setReportData({ month: attendanceMonth, days: [], rows: [] });
@@ -275,14 +282,15 @@ const StudentAttendanceReport = () => {
     [reportReturnTo]
   );
 
+  const reportDays = useMemo(
+    () => capMonthlyReportDaysToToday(reportData?.days, reportData?.month || attendanceMonth),
+    [reportData?.days, reportData?.month, attendanceMonth]
+  );
+
   const reportRows = useMemo(() => {
-    const days = Array.isArray(reportData?.days) ? reportData.days : [];
+    const days = reportDays;
     const holidayDates = Array.isArray(reportData?.holiday_dates) ? reportData.holiday_dates : [];
-    const normalized = applyHolidayDatesToMonthlyGrid(
-      normalizeMonthlyAttendanceGridRows(reportData?.rows),
-      days,
-      holidayDates
-    );
+    const normalized = prepareMonthlyAttendanceGrid(reportData?.rows, days, holidayDates);
     const q = studentSearch.trim().toLowerCase();
     return normalized
       .map((row) => ({
@@ -303,11 +311,11 @@ const StudentAttendanceReport = () => {
         },
       }))
       .filter((row) => !q || String(row.entity_name || "").toLowerCase().includes(q));
-  }, [reportData, studentSearch]);
+  }, [reportDays, reportData, studentSearch]);
 
   const reportDayColumns = useMemo(
     () =>
-      (Array.isArray(reportData?.days) ? reportData.days : []).map((day: any) => ({
+      reportDays.map((day: any) => ({
         title: (
           <div className="text-center p-1">
             <span className="fs-10 d-block text-muted text-uppercase">{day.weekdayShort?.charAt(0)}</span>
@@ -355,7 +363,7 @@ const StudentAttendanceReport = () => {
           );
         },
       })),
-    [reportData]
+    [reportDays]
   );
 
   const reportColumns = useMemo(
@@ -407,7 +415,7 @@ const StudentAttendanceReport = () => {
   );
 
   const reportExportRows = useMemo(() => {
-    const dayKeys = (Array.isArray(reportData?.days) ? reportData.days : []).map((d: any) => d?.date).filter(Boolean);
+    const dayKeys = reportDays.map((d: any) => d?.date).filter(Boolean);
     return reportRows.map((row: any) => {
       const base: Record<string, any> = {
         Student: row.entity_name || "",
@@ -422,7 +430,7 @@ const StudentAttendanceReport = () => {
       });
       return base;
     });
-  }, [reportData, reportRows]);
+  }, [reportDays, reportRows]);
 
   const dayExportRows = useMemo(
     () =>
