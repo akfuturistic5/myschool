@@ -346,9 +346,58 @@ const updateDesignation = async (req, res) => {
   }
 };
 
+// Delete designation (admin) — blocked if staff still reference it
+const deleteDesignation = async (req, res) => {
+  try {
+    const id = parsePositiveIntId(req.params.id);
+    if (!id) {
+      return errorResponse(res, 400, 'Invalid designation id', 'VALIDATION_ERROR');
+    }
+
+    const existing = await query(`SELECT id, designation_name FROM designations WHERE id = $1`, [id]);
+    if (existing.rows.length === 0) {
+      return errorResponse(res, 404, 'Designation not found');
+    }
+
+    const staffCount = await query(
+      `SELECT COUNT(*)::int AS c FROM staff WHERE designation_id = $1`,
+      [id]
+    );
+    const sc = staffCount.rows[0]?.c ?? 0;
+    if (sc > 0) {
+      return errorResponse(
+        res,
+        409,
+        'Cannot delete this designation because it is assigned to staff. Reassign those staff members first.',
+        'IN_USE'
+      );
+    }
+
+    const result = await query(`DELETE FROM designations WHERE id = $1 RETURNING *`, [id]);
+
+    if (result.rows.length === 0) {
+      return errorResponse(res, 404, 'Designation not found');
+    }
+
+    return success(res, 200, 'Designation deleted successfully', result.rows[0]);
+  } catch (error) {
+    console.error('Error deleting designation:', error);
+    if (error.code === '23503') {
+      return errorResponse(
+        res,
+        409,
+        'Cannot delete this designation because other records still reference it.',
+        'IN_USE'
+      );
+    }
+    return errorResponse(res, 500, 'Failed to delete designation');
+  }
+};
+
 module.exports = {
   getAllDesignations,
   getDesignationById,
   createDesignation,
   updateDesignation,
+  deleteDesignation,
 };

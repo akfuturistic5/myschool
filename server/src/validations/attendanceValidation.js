@@ -59,6 +59,7 @@ const reportQuerySchema = Joi.object({
   department_id: Joi.number().integer().positive().allow(null, ''),
   designation_id: Joi.number().integer().positive().allow(null, ''),
   academic_year_id: Joi.number().integer().positive().allow(null, ''),
+  staff_id: Joi.number().integer().positive().allow(null, ''),
 });
 
 const dayWiseQuerySchema = Joi.object({

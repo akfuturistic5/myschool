@@ -10,7 +10,10 @@ const { ROLE_NAMES } = require('../config/roles');
 const { parseRelativeKey } = require('../storage/LocalFilesystemStorageProvider');
 const { getSchoolIdFromRequest } = require('../utils/schoolContext');
 const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
-const { issueTenantSessionForUser } = require('../services/tenantSessionIssueService');
+const {
+  issueTenantSessionForUser,
+  refreshTenantJwtCookie,
+} = require('../services/tenantSessionIssueService');
 const { getEffectiveSchoolModules } = require('../services/saasSchoolModulesService');
 
 function displayRoleFromRoleRow(user) {
@@ -411,6 +414,42 @@ const login = async (req, res) => {
     // Never expose password hashes or internal auth fields to clients.
     if (user && Object.prototype.hasOwnProperty.call(user, 'password_hash')) {
       delete user.password_hash;
+    }
+
+    const dbRoleId = parseInt(String(user.role_id ?? ''), 10);
+    const tokenRoleId = parseInt(String(tokenUser.role_id ?? ''), 10);
+    const dbRoleName = String(user.role_name || '').trim().toLowerCase();
+    const tokenRoleName = String(tokenUser.role_name || tokenUser.role || '').trim().toLowerCase();
+    const roleIdChanged =
+      Number.isFinite(dbRoleId) &&
+      Number.isFinite(tokenRoleId) &&
+      dbRoleId > 0 &&
+      tokenRoleId > 0 &&
+      dbRoleId !== tokenRoleId;
+    const roleNameChanged = dbRoleName !== '' && tokenRoleName !== '' && dbRoleName !== tokenRoleName;
+    if ((roleIdChanged || roleNameChanged) && tokenUser.school_id != null) {
+      const targetDbName = req.tenant?.db_name || tokenUser.db_name;
+      if (targetDbName) {
+        refreshTenantJwtCookie(req, res, {
+          school: {
+            id: tokenUser.school_id,
+            school_name: tokenUser.school_name,
+            type: tokenUser.school_type,
+            institute_number: tokenUser.institute_number,
+            logo: tokenUser.school_logo || null,
+          },
+          user: {
+            id: user.id,
+            username: user.username,
+            role_id: user.role_id,
+            role_name: user.role_name,
+          },
+          targetDbName,
+        });
+        tokenUser.role_id = user.role_id;
+        tokenUser.role_name = user.role_name;
+        req.user = tokenUser;
+      }
     }
     const hasStudent = user.student_id != null;
     const hasStaff = user.staff_id != null;

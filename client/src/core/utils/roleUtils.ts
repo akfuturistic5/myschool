@@ -283,17 +283,16 @@ const ADMIN_ONLY_PATH_PREFIXES = [
 export function canAccessPath(path: string, role: RoleInput, explicitRoleId?: number | null): boolean {
   if (path === all_routes.approveRequest) {
     const scope = getRoleScope(role, explicitRoleId);
-    return scope === 'teacher' || scope === 'headmaster' || scope === 'administrative';
+    return scope === 'teacher' || scope === 'headmaster';
   }
   if (path === all_routes.listLeaves) {
     return (
       isHeadmasterRole(role, explicitRoleId) ||
-      isAdministrativeRole(role, explicitRoleId) ||
       getRoleScope(role, explicitRoleId) === 'teacher'
     );
   }
   if (path === all_routes.leaveTypesManage) {
-    return isHeadmasterRole(role, explicitRoleId) || isAdministrativeRole(role, explicitRoleId);
+    return isHeadmasterRole(role, explicitRoleId);
   }
 
   const userDashboard = getDashboardForRole(role, explicitRoleId);

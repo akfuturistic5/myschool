@@ -23,6 +23,32 @@ function formatSalaryDisplay(v: unknown): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+function parseDesignationApiError(err: unknown, fallback: string): string {
+  if (!(err instanceof Error)) return fallback;
+  const msg = err.message;
+  const marker = "message: ";
+  const idx = msg.indexOf(marker);
+  if (idx === -1) return msg || fallback;
+  const jsonPart = msg.slice(idx + marker.length).trim();
+  try {
+    const j = JSON.parse(jsonPart) as { message?: string };
+    if (typeof j.message === "string" && j.message.trim()) return j.message;
+  } catch {
+    /* ignore */
+  }
+  return msg || fallback;
+}
+
+function closeModalById(modalId: string) {
+  const el = document.getElementById(modalId);
+  if (!el) return;
+  const bs = (window as any).bootstrap;
+  if (bs?.Modal) {
+    const modal = bs.Modal.getInstance(el) || new bs.Modal(el);
+    modal.hide();
+  }
+}
+
 const Designation = () => {
   const routes = all_routes;
   const { designations, loading, error, refetch } = useDesignations();
@@ -42,6 +68,12 @@ const Designation = () => {
   const [addSalaryMax, setAddSalaryMax] = useState('');
   const [addDepartmentId, setAddDepartmentId] = useState<string>('');
   const [isCreating, setIsCreating] = useState(false);
+  const [designationPendingDelete, setDesignationPendingDelete] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const designationExportRows = useMemo(() => {
     return designations.map((r: any) => {
@@ -268,8 +300,40 @@ const Designation = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const desig = record.originalData || record;
+                      const rawId = desig.id ?? record.originalData?.id;
+                      const nid =
+                        typeof rawId === "number"
+                          ? rawId
+                          : parseInt(String(rawId ?? ""), 10);
+                      if (!Number.isFinite(nid) || nid < 1) return;
+                      setDeleteError(null);
+                      setDesignationPendingDelete({
+                        id: nid,
+                        name: String(
+                          desig.designation_name ||
+                            desig.designation ||
+                            record.designation ||
+                            "this designation"
+                        ),
+                      });
+                      setTimeout(() => {
+                        const modalElement = document.getElementById(
+                          "delete_designation_modal"
+                        );
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal =
+                              bootstrap.Modal.getInstance(modalElement) ||
+                              new bootstrap.Modal(modalElement);
+                            modal.show();
+                          }
+                        }
+                      }, 0);
+                    }}
                   >
                     <i className="ti ti-trash-x me-2" />
                     Delete
@@ -888,30 +952,81 @@ const Designation = () => {
         </div>
         {/* Edit Department */}
         {/* Delete Modal */}
-        <div className="modal fade" id="delete-modal">
+        <div className="modal fade" id="delete_designation_modal">
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
-              <form >
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                }}
+              >
                 <div className="modal-body text-center">
                   <span className="delete-icon">
                     <i className="ti ti-trash-x" />
                   </span>
                   <h4>Confirm Deletion</h4>
-                  <p>
-                    You want to delete all the marked items, this cant be undone
-                    once you delete.
+                  {deleteError && (
+                    <div className="alert alert-danger text-start mb-3" role="alert">
+                      {deleteError}
+                    </div>
+                  )}
+                  <p className="mb-1">
+                    Delete designation{" "}
+                    <strong>{designationPendingDelete?.name ?? "—"}</strong>? This
+                    cannot be undone.
                   </p>
-                  <div className="d-flex justify-content-center">
-                    <Link
-                      to="#"
+                  <p className="text-muted small">
+                    Deletion is blocked if staff members still use this designation.
+                  </p>
+                  <div className="d-flex justify-content-center mt-3">
+                    <button
+                      type="button"
                       className="btn btn-light me-3"
                       data-bs-dismiss="modal"
+                      disabled={isDeleting}
+                      onClick={() => {
+                        setDeleteError(null);
+                        setDesignationPendingDelete(null);
+                      }}
                     >
                       Cancel
-                    </Link>
-                    <Link to="#" className="btn btn-danger" data-bs-dismiss="modal">
-                      Yes, Delete
-                    </Link>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-danger"
+                      disabled={isDeleting || !designationPendingDelete}
+                      onClick={async () => {
+                        if (!designationPendingDelete) return;
+                        setDeleteError(null);
+                        try {
+                          setIsDeleting(true);
+                          const response = await apiService.deleteDesignation(
+                            designationPendingDelete.id
+                          );
+                          if (response && response.status === "SUCCESS") {
+                            closeModalById("delete_designation_modal");
+                            setDesignationPendingDelete(null);
+                            await refetch();
+                          } else {
+                            setDeleteError(
+                              (response as { message?: string })?.message ||
+                                "Failed to delete designation"
+                            );
+                          }
+                        } catch (err) {
+                          setDeleteError(
+                            parseDesignationApiError(
+                              err,
+                              "Failed to delete designation."
+                            )
+                          );
+                        } finally {
+                          setIsDeleting(false);
+                        }
+                      }}
+                    >
+                      {isDeleting ? "Deleting…" : "Yes, Delete"}
+                    </button>
                   </div>
                 </div>
               </form>

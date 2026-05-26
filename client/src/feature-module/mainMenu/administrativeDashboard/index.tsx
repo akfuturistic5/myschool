@@ -1,10 +1,12 @@
 import { Link } from "react-router-dom";
-import { useState } from "react";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import { useCurrentUser } from "../../../core/hooks/useCurrentUser";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
-import { apiService } from "../../../core/services/apiService";
+import {
+  isAdministrativeRole,
+  isHeadmasterRole,
+} from "../../../core/utils/roleUtils";
 import { useDashboardStats } from "../../../core/hooks/useDashboardStats";
 import {
   useDashboardClassRoutine,
@@ -26,21 +28,32 @@ const formatFeeAmount = (value: number | null | undefined): string =>
 const AdministrativeDashboard = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const [leaveActionId, setLeaveActionId] = useState<number | null>(null);
-  const [leaveFeedback, setLeaveFeedback] = useState<{ type: "success" | "danger"; text: string } | null>(null);
   const { user: currentUser, loading: userLoading } = useCurrentUser();
-  const { stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useDashboardStats({ academicYearId });
-  const { upcomingEvents, loading: eventsLoading, error: eventsError, refetch: refetchEvents } = useDashboardMergedUpcomingEvents({ limit: 8 });
-  const { routine: classRoutine, loading: routineLoading, error: routineError, refetch: refetchRoutine } = useDashboardClassRoutine({ limit: 5, academicYearId });
-  const { notices: dashboardNotices, loading: noticesLoading, error: noticesError, refetch: refetchNotices } = useDashboardNoticeBoard({ limit: 1 });
-  const { activityItems, loading: activityLoading, error: activityError, } = useDashboardStudentActivity({ limit: 5, academicYearId });
-  const { feeStats } = useDashboardFeeStats({ academicYearId });
-  const { financeSummary } = useDashboardFinanceSummary({ academicYearId });
+  const canLoadOperationalDashboard =
+    !userLoading &&
+    (isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser));
+  const dashboardOpts = { enabled: canLoadOperationalDashboard };
+  const { stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useDashboardStats({
+    academicYearId,
+    ...dashboardOpts,
+  });
+  const { upcomingEvents, loading: eventsLoading, error: eventsError, refetch: refetchEvents } =
+    useDashboardMergedUpcomingEvents({ limit: 8, ...dashboardOpts });
+  const { routine: classRoutine, loading: routineLoading, error: routineError, refetch: refetchRoutine } =
+    useDashboardClassRoutine({ limit: 5, academicYearId, ...dashboardOpts });
+  const { notices: dashboardNotices, loading: noticesLoading, error: noticesError, refetch: refetchNotices } =
+    useDashboardNoticeBoard({ limit: 1, ...dashboardOpts });
+  const { activityItems, loading: activityLoading, error: activityError } = useDashboardStudentActivity({
+    limit: 5,
+    academicYearId,
+    ...dashboardOpts,
+  });
+  const { feeStats } = useDashboardFeeStats({ academicYearId, ...dashboardOpts });
+  const { financeSummary } = useDashboardFinanceSummary({ academicYearId, ...dashboardOpts });
   const { leaveApplications, loading: leavesLoading, error: leavesError, refetch: refetchLeaves } = useLeaveApplications({
     limit: 5,
-    canUseAdminList: true,
-    academicYearId,
-    pendingOnly: true,
+    canUseAdminList: false,
+    enabled: canLoadOperationalDashboard,
   });
 
   const quickLinks = [
@@ -55,31 +68,6 @@ const AdministrativeDashboard = () => {
   const noticeRows = Array.isArray(dashboardNotices) ? dashboardNotices : [];
   const leaveRows = Array.isArray(leaveApplications) ? leaveApplications : [];
   const activityRows = Array.isArray(activityItems) ? activityItems : [];
-
-  const handleLeaveAction = async (id: number, status: "approved" | "rejected") => {
-    if (leaveActionId != null) return;
-    setLeaveActionId(id);
-    setLeaveFeedback(null);
-    try {
-      const res = await apiService.updateLeaveApplicationStatus(id, status);
-      if (res?.status === "SUCCESS") {
-        setLeaveFeedback({
-          type: "success",
-          text: status === "approved" ? "Leave approved successfully." : "Leave rejected successfully.",
-        });
-        refetchLeaves();
-      } else {
-        setLeaveFeedback({ type: "danger", text: res?.message || "Could not update leave status." });
-      }
-    } catch (err) {
-      setLeaveFeedback({
-        type: "danger",
-        text: err instanceof Error ? err.message : "Could not update leave status.",
-      });
-    } finally {
-      setLeaveActionId(null);
-    }
-  };
 
   return (
     <div className="page-wrapper">
@@ -114,9 +102,9 @@ const AdministrativeDashboard = () => {
                         {item.label}
                       </Link>
                     ))}
-                    <Link to={routes.approveRequest} className="btn btn-outline-light">
-                      <i className="ti ti-checklist me-1" />
-                      Approve Leaves
+                    <Link to={routes.administrativeLeaves} className="btn btn-outline-light">
+                      <i className="ti ti-calendar-due me-1" />
+                      My Leave &amp; Attendance
                     </Link>
                   </div>
                 </div>
@@ -208,25 +196,25 @@ const AdministrativeDashboard = () => {
 
           <div className="col-xl-6 d-flex">
             <div className="card flex-fill">
-              <div className="card-header">
-                <h5 className="card-title">Pending leave approvals</h5>
+              <div className="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <h5 className="card-title mb-0">My leave applications</h5>
+                <Link to={routes.administrativeLeaves} className="btn btn-sm btn-outline-primary">
+                  View all
+                </Link>
               </div>
               <div className="card-body">
-                {leaveFeedback && (
-                  <div className={`alert alert-${leaveFeedback.type} py-2`}>{leaveFeedback.text}</div>
-                )}
                 {leavesError && (
                   <div className="alert alert-danger py-2 d-flex justify-content-between align-items-center">
-                    <span className="small mb-0">Could not load leave requests.</span>
+                    <span className="small mb-0">Could not load your leave applications.</span>
                     <button type="button" className="btn btn-sm btn-danger" onClick={refetchLeaves}>
                       Retry
                     </button>
                   </div>
                 )}
                 {leavesLoading ? (
-                  <p className="text-muted mb-0">Loading leave requests...</p>
+                  <p className="text-muted mb-0">Loading leave applications...</p>
                 ) : leaveRows.length === 0 ? (
-                  <p className="text-muted mb-0">No pending leave requests right now.</p>
+                  <p className="text-muted mb-0">No leave applications yet. Apply from My Leave &amp; Attendance.</p>
                 ) : (
                   <ul className="list-group list-group-flush">
                     {leaveRows.map((leave: any) => (
@@ -236,24 +224,6 @@ const AdministrativeDashboard = () => {
                           Status: {leave.status || "Pending"}
                           {leave.leaveRange ? ` • ${leave.leaveRange}` : ""}
                         </small>
-                        <div className="mt-2 d-flex gap-2">
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-success"
-                            disabled={leaveActionId === leave.id}
-                            onClick={() => handleLeaveAction(leave.id, "approved")}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-danger"
-                            disabled={leaveActionId === leave.id}
-                            onClick={() => handleLeaveAction(leave.id, "rejected")}
-                          >
-                            Reject
-                          </button>
-                        </div>
                       </li>
                     ))}
                   </ul>

@@ -12,6 +12,10 @@ const {
   assertDesignationBelongsToDepartment,
   mapDesignationDepartmentError,
 } = require('../utils/designationDepartmentValidation');
+const {
+  syncStaffLoginRoleAfterEmploymentChange,
+  repairStaffLoginRoleMismatches,
+} = require('../utils/staffLoginRoleSync');
 
 const TEACHER_EMAIL_MAX_LEN = 100;
 const EMAIL_FORMAT_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -76,34 +80,6 @@ async function getSupportStaffDepartmentId(client) {
   );
   return r.rows[0]?.id ?? null;
 }
-
-async function getRoleIdByName(client, roleName) {
-  const role = String(roleName || '').trim().toLowerCase();
-  if (!role) return null;
-  const r = await client.query(
-    `SELECT id FROM user_roles
-     WHERE LOWER(TRIM(role_name)) = $1
-     LIMIT 1`,
-    [role]
-  );
-  return r.rows[0]?.id ?? null;
-}
-
-async function syncStaffUserRole(client, userId, { isDriver }) {
-  if (!userId) return;
-  const targetRoleName = isDriver ? 'driver' : 'administrative';
-  const targetRoleId = await getRoleIdByName(client, targetRoleName);
-  if (!targetRoleId) return;
-  await client.query(
-    `UPDATE users
-     SET role_id = $1, updated_at = NOW()
-     WHERE id = $2`,
-    [targetRoleId, userId]
-  );
-}
-
-
-
 
 /** Normalized staff SELECT — sources personal fields from users, payroll from staff_salary_assignments. */
 const STAFF_SELECT_NORMALIZED = `
@@ -210,6 +186,9 @@ async function backfillLegacyTeacherStaffAssignments() {
 const getAllStaff = async (req, res) => {
   try {
     await backfillLegacyTeacherStaffAssignments();
+    await executeTransaction(async (client) => {
+      await repairStaffLoginRoleMismatches(client);
+    });
     // All employment rows in `staff` (teachers, administrative, drivers, etc.).
     // Teacher-only listings use teacherController; this list must match DB so HRM/hostel/library pickers stay complete.
     // Active rule matches `staff.is_active` generated column: case-insensitive status, not soft-deleted.
@@ -247,11 +226,22 @@ const getStaffById = async (req, res) => {
       return errorResponse(res, 404, 'Staff not found');
     }
 
-    const row = result.rows[0];
+    let row = result.rows[0];
     const isAdmin = roleId != null && ADMIN_ROLE_IDS.includes(roleId);
     const isSelf = String(row.user_id) === String(requester.id);
     if (!isAdmin && !isSelf) {
       return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
+    }
+
+    if (isAdmin && row.user_id) {
+      await executeTransaction(async (client) => {
+        await repairStaffLoginRoleMismatches(client);
+      });
+      const refreshed = await query(
+        `${STAFF_SELECT_NORMALIZED} WHERE s.id = $1`,
+        [id]
+      );
+      if (refreshed.rows[0]) row = refreshed.rows[0];
     }
 
     await enrichStaffProfileAllocations(row, row.id);
@@ -455,9 +445,12 @@ const createStaff = async (req, res) => {
         );
       }
 
-      if (!explicitRoleProvided) {
-        await syncStaffUserRole(client, userId, { isDriver: Boolean(isDriverRole) });
-      }
+      const finalDesigForRole =
+        desigParsed && !Number.isNaN(desigParsed) ? desigParsed : null;
+      await syncStaffLoginRoleAfterEmploymentChange(client, userId, finalDesigForRole, {
+        roleIdFromForm: explicitRoleProvided ? roleIdParsed : null,
+        employmentFieldsTouched: true,
+      });
 
       return staffId;
     });
@@ -582,22 +575,7 @@ const updateStaff = async (req, res) => {
         if (linkedin !== undefined) uadd('linkedin', linkedin || null);
         if (youtube !== undefined) uadd('youtube', youtube || null);
         if (instagram !== undefined) uadd('instagram', instagram || null);
-        if (role_id !== undefined) {
-          if (roleIdParsed && !Number.isNaN(roleIdParsed)) {
-            const rOk = await client.query(
-              `SELECT id FROM user_roles WHERE id = $1 AND (is_active IS NOT FALSE) LIMIT 1`,
-              [roleIdParsed]
-            );
-            if (!rOk.rows.length) {
-              const err = new Error('Invalid role');
-              err.staffInputError = { status: 400, code: 'INVALID_ROLE' };
-              throw err;
-            }
-            uadd('role_id', roleIdParsed);
-          } else {
-            uadd('role_id', null);
-          }
-        }
+        // users.role_id is set once in finalizeStaffUserLoginRole (after staff designation is saved).
 
         let nextStatus = prev.status || 'Active';
         if (is_active !== undefined) {
@@ -703,8 +681,37 @@ const updateStaff = async (req, res) => {
       );
       const cur = staffNow.rows[0];
       const isDrv = cur?.desig_key && DRIVER_DESIGNATION_KEYS.has(cur.desig_key);
-      if (cur?.user_id && role_id === undefined) {
-        await syncStaffUserRole(client, cur.user_id, { isDriver: Boolean(isDrv) });
+      const employmentChanged =
+        designation_id !== undefined || department_id !== undefined;
+      const loginRoleChanged = role_id !== undefined;
+
+      if (cur?.user_id && (employmentChanged || loginRoleChanged)) {
+        if (loginRoleChanged) {
+          if (roleIdParsed && !Number.isNaN(roleIdParsed)) {
+            const rOk = await client.query(
+              `SELECT id FROM user_roles WHERE id = $1 AND (is_active IS NOT FALSE) LIMIT 1`,
+              [roleIdParsed]
+            );
+            if (!rOk.rows.length) {
+              const err = new Error('Invalid role');
+              err.staffInputError = { status: 400, code: 'INVALID_ROLE' };
+              throw err;
+            }
+          } else if (role_id !== null && role_id !== '') {
+            const err = new Error('Invalid role');
+            err.staffInputError = { status: 400, code: 'INVALID_ROLE' };
+            throw err;
+          }
+        }
+
+        await syncStaffLoginRoleAfterEmploymentChange(client, cur.user_id, cur.designation_id, {
+          roleIdFromForm: loginRoleChanged ? roleIdParsed : null,
+          employmentFieldsTouched: employmentChanged || loginRoleChanged,
+        });
+      } else if (!cur?.user_id && (employmentChanged || loginRoleChanged)) {
+        const err = new Error('Staff record is not linked to a user account; login role cannot be updated');
+        err.staffInputError = { status: 400, code: 'USER_LINK_MISSING' };
+        throw err;
       }
 
       if (isDrv) {

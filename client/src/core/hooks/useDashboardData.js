@@ -61,12 +61,17 @@ export const useDashboardUpcomingEvents = (options = {}) => {
 };
 
 export const useDashboardClassRoutine = (options = {}) => {
-  const { limit = 5, academicYearId } = options;
+  const { limit = 5, academicYearId, enabled = true } = options;
   const [routine, setRoutine] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const fetchRoutine = async () => {
+    if (!enabled) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -86,7 +91,7 @@ export const useDashboardClassRoutine = (options = {}) => {
 
   useEffect(() => {
     fetchRoutine();
-  }, [limit, academicYearId]);
+  }, [limit, academicYearId, enabled]);
 
   return { routine, loading, error, refetch: fetchRoutine };
 };
@@ -270,12 +275,17 @@ export const useDashboardTopSubjects = (options = {}) => {
 };
 
 export const useDashboardNoticeBoard = (options = {}) => {
-  const { limit = 5 } = options;
+  const { limit = 5, enabled = true } = options;
   const [notices, setNotices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const fetchNotices = async () => {
+    if (!enabled) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -295,7 +305,7 @@ export const useDashboardNoticeBoard = (options = {}) => {
 
   useEffect(() => {
     fetchNotices();
-  }, [limit]);
+  }, [limit, enabled]);
 
   return { notices, loading, error, refetch: fetchNotices };
 };
@@ -334,7 +344,7 @@ export const useDashboardRecentActivity = (options = {}) => {
 };
 
 export const useDashboardFeeStats = (options = {}) => {
-  const { academicYearId, feePeriod = 'all' } = options;
+  const { academicYearId, feePeriod = 'all', enabled = true } = options;
   const [feeStats, setFeeStats] = useState({
     totalFeesCollected: 0,
     fineCollected: 0,
@@ -351,6 +361,10 @@ export const useDashboardFeeStats = (options = {}) => {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      if (!enabled) {
+        if (mounted) setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
         setError(null);
@@ -386,13 +400,13 @@ export const useDashboardFeeStats = (options = {}) => {
       }
     })();
     return () => { mounted = false; };
-  }, [academicYearId, feePeriod]);
+  }, [academicYearId, feePeriod, enabled]);
 
   return { feeStats, loading, error };
 };
 
 export const useDashboardFinanceSummary = (options = {}) => {
-  const { academicYearId, feePeriod = 'all' } = options;
+  const { academicYearId, feePeriod = 'all', enabled = true } = options;
   const [financeSummary, setFinanceSummary] = useState({
     totalEarnings: 0,
     totalFines: 0,
@@ -407,6 +421,10 @@ export const useDashboardFinanceSummary = (options = {}) => {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      if (!enabled) {
+        if (mounted) setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
         setError(null);
@@ -442,19 +460,24 @@ export const useDashboardFinanceSummary = (options = {}) => {
       }
     })();
     return () => { mounted = false; };
-  }, [academicYearId, feePeriod]);
+  }, [academicYearId, feePeriod, enabled]);
 
   return { financeSummary, loading, error };
 };
 
 /** Headmaster: school events + calendar_events merged */
 export const useDashboardMergedUpcomingEvents = (options = {}) => {
-  const { limit = 10 } = options;
+  const { limit = 10, enabled = true } = options;
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const fetchEvents = async () => {
+    if (!enabled) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -484,13 +507,13 @@ export const useDashboardMergedUpcomingEvents = (options = {}) => {
 
   useEffect(() => {
     fetchEvents();
-  }, [limit]);
+  }, [limit, enabled]);
 
   return { upcomingEvents: events, loading, error, refetch: fetchEvents };
 };
 
 export const useDashboardStudentActivity = (options = {}) => {
-  const { limit = 5, academicYearId } = options;
+  const { limit = 5, academicYearId, enabled = true } = options;
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -498,6 +521,10 @@ export const useDashboardStudentActivity = (options = {}) => {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      if (!enabled) {
+        if (mounted) setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
         setError(null);
@@ -517,7 +544,7 @@ export const useDashboardStudentActivity = (options = {}) => {
       }
     })();
     return () => { mounted = false; };
-  }, [limit, academicYearId]);
+  }, [limit, academicYearId, enabled]);
 
   return { activityItems: items, loading, error };
 };

@@ -19,6 +19,10 @@ import {
   buildDesignationSelectOptions,
   resolveDesignationAfterDepartmentChange,
 } from "../../../core/utils/departmentDesignationUtils";
+import {
+  designationNameIsTeacher,
+  resolveStaffFormRoleId,
+} from "../../../core/utils/staffDesignationRoleUtils";
 
 const genderOptions: Option[] = [
   { value: "male", label: "Male" },
@@ -91,12 +95,7 @@ export default function StaffProfileForm({
     loading: bloodGroupsLoading,
     error: bloodGroupsError,
   } = useBloodGroups();
-  const {
-    roleOptions,
-    driverRoleId,
-    loading: rolesLoading,
-    error: rolesError,
-  } = useStaffRoleOptions();
+  const { administrativeRoleId, driverRoleId, teacherRoleId } = useStaffRoleOptions();
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -108,7 +107,6 @@ export default function StaffProfileForm({
   const [gender, setGender] = useState<string | null>(null);
   const [departmentId, setDepartmentId] = useState<string | null>(null);
   const [designationId, setDesignationId] = useState<string | null>(null);
-  const [roleId, setRoleId] = useState<string | null>(null);
   const [bloodGroupId, setBloodGroupId] = useState<string | null>(null);
   const [maritalStatus, setMaritalStatus] = useState<string | null>(null);
   const [fatherName, setFatherName] = useState("");
@@ -199,7 +197,7 @@ export default function StaffProfileForm({
   );
 
   const metaBusy =
-    departmentsLoading || designationsLoading || bloodGroupsLoading || rolesLoading;
+    departmentsLoading || designationsLoading || bloodGroupsLoading;
 
   const supportStaffDepartmentId = useMemo(() => {
     const row = ((departments as any[]) || []).find(
@@ -285,18 +283,54 @@ export default function StaffProfileForm({
     setPhotoPreview(null);
   };
 
-  const isDriverSelected = useMemo(() => {
-    if (!designationId) return false;
+  const selectedDesignationName = useMemo(() => {
+    if (!designationId) return "";
     const row = ((designations as any[]) || []).find(
       (d) => String(d.originalData?.id) === designationId
     );
-    const name = String(
-      row?.designation ?? row?.originalData?.designation_name ?? ""
-    )
-      .trim()
-      .toLowerCase();
-    return name === "driver" || name === "drivers";
+    return String(row?.designation ?? row?.originalData?.designation_name ?? "");
   }, [designationId, designations]);
+
+  const selectedDepartmentName = useMemo(() => {
+    if (!departmentId) return "";
+    const row = ((departments as any[]) || []).find(
+      (d) => String(d.originalData?.id) === departmentId
+    );
+    return String(row?.department ?? row?.originalData?.department_name ?? "");
+  }, [departmentId, departments]);
+
+  const isDriverSelected = useMemo(() => {
+    const name = selectedDesignationName.trim().toLowerCase();
+    return name === "driver" || name === "drivers";
+  }, [selectedDesignationName]);
+
+  const isTeacherSelected = useMemo(
+    () =>
+      designationNameIsTeacher(selectedDesignationName, selectedDepartmentName),
+    [selectedDesignationName, selectedDepartmentName]
+  );
+
+  const resolvedLoginRoleId = useMemo(() => {
+    if (!designationId) return null;
+    return resolveStaffFormRoleId({
+      designationName: selectedDesignationName,
+      storedRoleId:
+        mode === "edit" && initialStaff?.role_id != null
+          ? initialStaff.role_id
+          : null,
+      teacherRoleId,
+      driverRoleId,
+      administrativeRoleId,
+    });
+  }, [
+    designationId,
+    selectedDesignationName,
+    mode,
+    initialStaff?.role_id,
+    teacherRoleId,
+    driverRoleId,
+    administrativeRoleId,
+  ]);
 
   useEffect(() => {
     if (isDriverSelected && supportStaffDepartmentId) {
@@ -312,10 +346,6 @@ export default function StaffProfileForm({
   }, [isDriverSelected, supportStaffDepartmentId, designations]);
 
   useEffect(() => {
-    if (isDriverSelected && driverRoleId) setRoleId(driverRoleId);
-  }, [isDriverSelected, driverRoleId]);
-
-  useEffect(() => {
     if (!initialStaff || mode !== "edit") return;
     const s = initialStaff;
     setFirstName(String(s.first_name ?? ""));
@@ -326,7 +356,6 @@ export default function StaffProfileForm({
     setGender(s.gender != null && s.gender !== "" ? String(s.gender) : null);
     setDepartmentId(s.department_id != null ? String(s.department_id) : null);
     setDesignationId(s.designation_id != null ? String(s.designation_id) : null);
-    setRoleId(s.role_id != null ? String(s.role_id) : null);
     setBloodGroupId(s.blood_group_id != null ? String(s.blood_group_id) : null);
     setMaritalStatus(
       s.marital_status != null ? String(s.marital_status) : null
@@ -393,7 +422,14 @@ export default function StaffProfileForm({
           });
       }
     }
-  }, [initialStaff, mode, staffId]);
+  }, [
+    initialStaff,
+    mode,
+    staffId,
+    teacherRoleId,
+    driverRoleId,
+    administrativeRoleId,
+  ]);
 
   const getMissingPersonalFields = useCallback((): string[] => {
     const m: string[] = [];
@@ -402,7 +438,6 @@ export default function StaffProfileForm({
     if (!employeeCode.trim()) m.push("Employee code");
     if (!departmentId) m.push("Department");
     if (!designationId) m.push("Designation");
-    if (!roleId) m.push("Role");
     if (!gender) m.push("Gender");
     if (!phone.trim()) m.push("Primary phone");
     if (!email.trim()) m.push("Email");
@@ -434,7 +469,6 @@ export default function StaffProfileForm({
     employeeCode,
     departmentId,
     designationId,
-    roleId,
     gender,
     phone,
     email,
@@ -491,7 +525,7 @@ export default function StaffProfileForm({
         blood_group_id: bloodGroupId ? Number(bloodGroupId) : null,
         designation_id: designationId ? Number(designationId) : null,
         department_id: departmentId ? Number(departmentId) : null,
-        role_id: roleId ? Number(roleId) : null,
+        role_id: resolvedLoginRoleId ? Number(resolvedLoginRoleId) : null,
         qualification: qualification.trim() || null,
         experience_years: (() => {
           if (!experienceYears.trim()) return null;
@@ -603,7 +637,7 @@ export default function StaffProfileForm({
       bloodGroupId,
       designationId,
       departmentId,
-      roleId,
+      resolvedLoginRoleId,
       qualification,
       experienceYears,
       salary,
@@ -813,24 +847,6 @@ export default function StaffProfileForm({
                       noOptionsMessage={() =>
                         departmentId ? "No designations for this department" : "Select department first"
                       }
-                    />
-                  )}
-                </div>
-              </div>
-              <div className="col-xxl col-xl-3 col-md-6">
-                <div className="mb-3">
-                  <label className="form-label">
-                    Role
-                    <Req />
-                  </label>
-                  {loadOrError(
-                    rolesLoading,
-                    rolesError,
-                    <CommonSelect
-                      className="select"
-                      options={roleOptions}
-                      value={roleId}
-                      onChange={(v) => setRoleId(v)}
                     />
                   )}
                 </div>

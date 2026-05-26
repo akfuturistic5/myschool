@@ -895,10 +895,9 @@ const updateLeaveApplicationStatus = async (req, res) => {
     const roleId = Number(req.user?.user_role_id ?? req.user?.role_id);
     const roleName = String(req.user?.role_name || req.user?.role || '').trim().toLowerCase();
     const isTeacher = roleId === ROLES.TEACHER || roleName === 'teacher' || roleName.includes('teacher');
-    const isHeadmasterOrAdministrative =
+    const isHeadmaster =
       roleId === ROLES.ADMIN ||
-      roleId === ROLES.ADMINISTRATIVE ||
-      ['admin', 'headmaster', 'administrator', 'administrative'].includes(roleName);
+      ['admin', 'headmaster', 'administrator'].includes(roleName);
 
     if (flags.hasStudentId && target.student_id) {
       if (!isTeacher) {
@@ -936,10 +935,10 @@ const updateLeaveApplicationStatus = async (req, res) => {
         });
       }
     } else if (target.staff_id || target.applicant_staff_id) {
-      if (!isHeadmasterOrAdministrative) {
+      if (!isHeadmaster) {
         return res.status(403).json({
           status: 'ERROR',
-          message: 'Only headmaster or administrative users can approve or reject staff leave requests.',
+          message: 'Only headmaster can approve or reject staff leave requests.',
         });
       }
     } else {

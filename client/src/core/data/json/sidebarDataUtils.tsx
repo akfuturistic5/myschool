@@ -498,18 +498,10 @@ function buildAdministrativeSidebar(): typeof SidebarData {
       }
 
       if (section.label === "HRM") {
-        nextSection.submenuItems = nextSection.submenuItems.map((item: any) => {
-          if (item.label !== "Leaves" || !item.submenuItems) return item;
-          const hasApproveRequest = item.submenuItems.some((sub: any) => sub.label === "Approve Request");
-          if (hasApproveRequest) return item;
-          return {
-            ...item,
-            submenuItems: [
-              ...item.submenuItems,
-              { label: "Approve Request", link: routes.approveRequest, showSubRoute: false },
-            ],
-          };
-        });
+        // Administrative staff apply/view own leave via MAIN → My Leave & Attendance only.
+        nextSection.submenuItems = nextSection.submenuItems.filter(
+          (item: any) => item.label !== "Leaves"
+        );
       }
 
       if (section.label === "Pages") {

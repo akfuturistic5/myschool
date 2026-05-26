@@ -38,7 +38,7 @@ const defaultAttendanceToday = {
 };
 
 export const useDashboardStats = (options = {}) => {
-  const { academicYearId, attendanceDate = null, attendanceScope = 'day' } = options;
+  const { academicYearId, attendanceDate = null, attendanceScope = 'day', enabled = true } = options;
   const [stats, setStats] = useState(defaultStats);
   const [trends, setTrends] = useState(defaultTrends);
   const [attendanceToday, setAttendanceToday] = useState(defaultAttendanceToday);
@@ -46,6 +46,11 @@ export const useDashboardStats = (options = {}) => {
   const [error, setError] = useState(null);
 
   const fetchStats = async () => {
+    if (!enabled) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -92,7 +97,7 @@ export const useDashboardStats = (options = {}) => {
 
   useEffect(() => {
     fetchStats();
-  }, [academicYearId, attendanceDate, attendanceScope]);
+  }, [academicYearId, attendanceDate, attendanceScope, enabled]);
 
   return {
     stats,

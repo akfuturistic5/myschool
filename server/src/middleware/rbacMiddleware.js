@@ -3,7 +3,8 @@
  * Use after authenticate/protectApi - req.user must have role_id
  */
 const { error: errorResponse } = require('../utils/responseHelper');
-const { ROLES, ROLE_NAMES } = require('../config/roles');
+const { ROLES, ROLE_NAMES, ADMIN_ROLE_NAMES } = require('../config/roles');
+const { getAuthContext } = require('../utils/accessControl');
 
 function parseRoleId(value) {
   const roleId = value != null ? parseInt(value, 10) : null;
@@ -16,7 +17,8 @@ function parseRoleName(value) {
 
 function allowedRoleNamesFromIds(roleIds) {
   const names = new Set();
-  roleIds.forEach((id) => {
+  const ids = Array.isArray(roleIds) ? roleIds : [];
+  ids.forEach((id) => {
     const canonicalName = ROLE_NAMES[id];
     if (canonicalName) names.add(parseRoleName(canonicalName));
     if (id === ROLES.ADMIN) {
@@ -28,6 +30,11 @@ function allowedRoleNamesFromIds(roleIds) {
       names.add('mother');
     }
   });
+  const allowsSchoolAdmin =
+    ids.includes(ROLES.ADMIN) || ids.includes(ROLES.ADMINISTRATIVE);
+  if (allowsSchoolAdmin) {
+    ADMIN_ROLE_NAMES.forEach((n) => names.add(parseRoleName(n)));
+  }
   return names;
 }
 
@@ -41,8 +48,12 @@ const requireRole = (allowedRoleIds) => {
     if (!user) {
       return errorResponse(res, 401, 'Not authenticated');
     }
-    const roleId = parseRoleId(user.role_id);
-    const roleName = parseRoleName(user.role_name || user.role);
+    const ctx = getAuthContext(req);
+    const roleId = ctx.roleId != null ? ctx.roleId : parseRoleId(user.role_id);
+    const roleName =
+      ctx.roleName !== ''
+        ? ctx.roleName
+        : parseRoleName(user.role_name || user.role);
     if (!Array.isArray(allowedRoleIds)) {
       return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
     }

@@ -38,8 +38,11 @@ const ROLE_NAMES = {
   [ROLES.GUARDIAN]: 'Guardian',
 };
 
-/** Roles that can approve/reject leave applications (role/applicant scoped in controller) */
-const LEAVE_APPROVER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE, ROLES.TEACHER];
+/** Roles that can approve/reject leave (scoped in controller: teachers → students, headmaster → staff) */
+const LEAVE_APPROVER_ROLES = [ROLES.ADMIN, ROLES.TEACHER];
+
+/** Headmaster-only: manage leave types and school-wide leave list (not administrative clerks) */
+const LEAVE_TYPE_MANAGER_ROLES = [ROLES.ADMIN];
 
 /** Roles that can manage fee collection (create, list all) */
 const FEE_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
@@ -69,7 +72,7 @@ const GUARDIAN_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE, ROLES.TEACHE
 const EVENT_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 
 /** Roles that can access getLeaveApplications (role-scoped in controller) */
-const LEAVE_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE, ROLES.TEACHER];
+const LEAVE_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.TEACHER];
 
 /** Roles that can access fee collections list (all students with fee summary) */
 const FEE_COLLECTIONS_LIST_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
@@ -107,6 +110,7 @@ module.exports = {
   ROLE_NAMES,
   EVENT_MANAGER_ROLES,
   LEAVE_APPROVER_ROLES,
+  LEAVE_TYPE_MANAGER_ROLES,
   FEE_MANAGER_ROLES,
   NOTICE_MANAGER_ROLES,
   ADMIN_DASHBOARD_ROLES,
