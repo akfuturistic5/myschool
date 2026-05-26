@@ -3301,6 +3301,18 @@ class ApiService {
     });
   }
 
+  async trashTodo(id) {
+    return this.makeRequest(`/todos/${id}/trash`, {
+      method: 'POST',
+    });
+  }
+
+  async restoreTodo(id) {
+    return this.makeRequest(`/todos/${id}/restore`, {
+      method: 'POST',
+    });
+  }
+
   // Notes
   async getNotes(params = {}) {
     const queryString = new URLSearchParams(params).toString();

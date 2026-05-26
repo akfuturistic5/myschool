@@ -94,16 +94,51 @@
         position: relative;
     }
 }
-.section-bulk-widget {
-    .nav-pills {
-        .nav-link {
-            &:hover {
-                background: variables.$dark;
-                color: variables.$white !important;
+/* Todo sidebar — explicit colors so items stay visible (not only on hover) */
+.notes-page-wrapper {
+    .todo-sidebar-panel {
+        .todo-folder-nav {
+            button.todo-folder-item {
+                display: flex;
+                align-items: center;
+                width: 100%;
+                border: 0;
+                background: transparent;
+                color: variables.$text-color;
+                font-size: 15px;
+                font-weight: 600;
+                padding: 10px 12px;
+                margin-bottom: 8px;
+                border-radius: 10px;
+                cursor: pointer;
+                transition: background 0.2s ease, color 0.2s ease;
+
+                i {
+                    color: inherit;
+                }
+
+                &:hover,
+                &.active {
+                    background: variables.$dark;
+                    color: variables.$white;
+                }
             }
-            &.active {
-                background: variables.$dark;
-                color: variables.$white !important;
+        }
+
+        .todo-filter-link {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            border: 0;
+            background: transparent;
+            padding: 4px 0;
+            margin-bottom: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            text-align: left;
+
+            &.is-active {
+                font-weight: 700;
             }
         }
     }
@@ -119,5 +154,31 @@
         p {
             text-decoration: line-through;
         }
+    }
+}
+
+#todo-delete-modal {
+    .modal-dialog {
+        max-width: 420px;
+    }
+    .delete-icon {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        margin: 0 auto 20px;
+        align-items: center;
+        justify-content: center;
+        background: variables.$danger-100;
+        color: variables.$danger;
+        font-size: 32px;
+    }
+    h4 {
+        font-size: 18px;
+        font-weight: 600;
+        color: variables.$dark;
+    }
+    p {
+        font-size: 14px;
+        line-height: 1.5;
     }
 }
