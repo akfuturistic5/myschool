@@ -7,7 +7,7 @@ import { all_routes } from "../../../router/all_routes";
 import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
 import { selectUser } from "../../../../core/data/redux/authSlice";
 import { apiService } from "../../../../core/services/apiService";
-import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
+import { isHeadmasterRole } from "../../../../core/utils/roleUtils";
 import { parseFetchErrorMessage } from "../../../../core/utils/parseFetchErrorMessage";
 
 type LeaveTypeRow = {
@@ -54,10 +54,8 @@ const LeaveTypesPage = () => {
   const canManageLeaveTypes = useMemo(() => {
     const candidates = [meUser, reduxUser].filter(Boolean);
     if (candidates.length === 0) return false;
-    return candidates.some(
-      (candidate) =>
-        isHeadmasterRole(candidate as Parameters<typeof isHeadmasterRole>[0]) ||
-        isAdministrativeRole(candidate as Parameters<typeof isAdministrativeRole>[0])
+    return candidates.some((candidate) =>
+      isHeadmasterRole(candidate as Parameters<typeof isHeadmasterRole>[0])
     );
   }, [meUser, reduxUser]);
 

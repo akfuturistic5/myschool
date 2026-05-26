@@ -11,6 +11,7 @@ const {
   assertDesignationBelongsToDepartment,
   mapDesignationDepartmentError,
 } = require('../utils/designationDepartmentValidation');
+const { syncStaffLoginRoleAfterEmploymentChange } = require('../utils/staffLoginRoleSync');
 const { resolveVehicleRouteAssignmentForAllocation } = require('../utils/transportAllocationVra');
 
 async function upsertStaffTransportAllocation(client, staffId, staffAcademicYearId, transportPayload) {
@@ -1477,6 +1478,17 @@ const updateTeacher = async (req, res) => {
             [staffId, class_id, subject_id, ayId]
           );
         }
+      }
+
+      if (userId && (designation_id != null || department_id != null)) {
+        const desigRow = await client.query(
+          `SELECT designation_id FROM staff WHERE id = $1 LIMIT 1`,
+          [staffId]
+        );
+        await syncStaffLoginRoleAfterEmploymentChange(client, userId, desigRow.rows[0]?.designation_id, {
+          roleIdFromForm: null,
+          employmentFieldsTouched: true,
+        });
       }
 
       // Fetch final record

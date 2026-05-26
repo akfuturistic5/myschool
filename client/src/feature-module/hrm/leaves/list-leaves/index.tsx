@@ -20,7 +20,7 @@ import { useClasses } from "../../../../core/hooks/useClasses";
 import { useSections } from "../../../../core/hooks/useSections";
 import { useDepartments } from "../../../../core/hooks/useDepartments";
 import { useDesignations } from "../../../../core/hooks/useDesignations";
-import { isAdministrativeRole, isHeadmasterRole, isTeacherRole } from "../../../../core/utils/roleUtils";
+import { isHeadmasterRole, isTeacherRole } from "../../../../core/utils/roleUtils";
 import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
 import { useCurrentTeacher } from "../../../../core/hooks/useCurrentTeacher";
 import TeacherModal from "../../../peoples/teacher/teacherModal";
@@ -47,7 +47,7 @@ const ListLeaves = () => {
   const roleName = String(currentUser?.role_name || currentUser?.role || "").toLowerCase();
   const roleId = Number(currentUser?.user_role_id);
   const isTeacher = isTeacherRole(currentUser);
-  const isAdmin = isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser);
+  const isAdmin = isHeadmasterRole(currentUser);
   const canUseAdminList = isAdmin || isTeacher;
   const isOwnLeavesOnly = isTeacher && !isAdmin;
   const { teacher: currentTeacher } = useCurrentTeacher() as any;

@@ -11,6 +11,7 @@ const {
   getDesignationById,
   createDesignation,
   updateDesignation,
+  deleteDesignation,
 } = require('../controllers/designationController');
 
 const router = express.Router();
@@ -36,5 +37,8 @@ router.put(
   validate(designationUpdateSchema),
   updateDesignation
 );
+
+// DELETE /api/designations/:id
+router.delete('/:id', requireRole([ROLES.ADMIN]), deleteDesignation);
 
 module.exports = router;
