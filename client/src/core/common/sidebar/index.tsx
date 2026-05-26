@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback, type MouseEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { selectUser } from "../../data/redux/authSlice";
@@ -13,6 +13,11 @@ import {
   setDataLayout,
 } from "../../data/redux/themeSettingSlice";
 import usePreviousRoute from "./usePreviousRoute";
+import {
+  findMenuOpenState,
+  hasActiveDescendant,
+  itemMatchesPath,
+} from "./sidebarMenuUtils";
 import { getSchoolLogoSrc, isMillatStyleLogoPath } from "../../utils/schoolLogo";
 import { useSchoolLogoUpload } from "../../hooks/useSchoolLogoUpload";
 import { getDashboardForRole } from "../../utils/roleUtils";
@@ -20,7 +25,7 @@ import { all_routes } from "../../../feature-module/router/all_routes";
 
 import "../../../../node_modules/react-perfect-scrollbar/dist/css/styles.css";
 import PerfectScrollbar from "react-perfect-scrollbar";
-import "../../../../node_modules/react-perfect-scrollbar/dist/css/styles.css";
+import "./sidebar-menu.scss";
 
 const Sidebar = () => {
   const Location = useLocation();
@@ -38,8 +43,11 @@ const Sidebar = () => {
   } = useSchoolLogoUpload();
   const dashboardLink = getDashboardForRole(user);
 
-  const [subOpen, setSubopen] = useState<any>("");
+  const sidebarScrollRef = useRef<PerfectScrollbar | null>(null);
+  const [subOpen, setSubopen] = useState("");
   const [subsidebar, setSubsidebar] = useState("");
+  const [collapsedMenus, setCollapsedMenus] = useState<Set<string>>(new Set());
+  const [collapsedSubMenus, setCollapsedSubMenus] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
@@ -76,31 +84,55 @@ const Sidebar = () => {
     }).filter(Boolean);
   }, [SidebarData, searchQuery]);
 
-  const toggleSidebar = (title: any) => {
-    localStorage.setItem("menuOpened", title);
-    if (title === subOpen) {
-      setSubopen("");
-    } else {
-      setSubopen(title);
+  const toggleSidebar = (title: string, isExpanded: boolean) => {
+    if (isExpanded) {
+      setCollapsedMenus((prev) => new Set(prev).add(title));
+      if (subOpen === title) {
+        setSubopen("");
+        localStorage.removeItem("menuOpened");
+      }
+      return;
     }
+    setCollapsedMenus((prev) => {
+      const next = new Set(prev);
+      next.delete(title);
+      return next;
+    });
+    setSubopen(title);
+    localStorage.setItem("menuOpened", title);
   };
 
-  const toggleSubsidebar = (subitem: any) => {
-    if (subitem === subsidebar) {
-      setSubsidebar("");
-    } else {
-      setSubsidebar(subitem);
+  const toggleSubsidebar = (subitem: string, isExpanded: boolean) => {
+    if (isExpanded) {
+      setCollapsedSubMenus((prev) => new Set(prev).add(subitem));
+      if (subsidebar === subitem) {
+        setSubsidebar("");
+      }
+      return;
     }
+    setCollapsedSubMenus((prev) => {
+      const next = new Set(prev);
+      next.delete(subitem);
+      return next;
+    });
+    setSubsidebar(subitem);
   };
 
   const handleLayoutChange = (layout: string) => {
     dispatch(setDataLayout(layout));
   };
 
-  const handleClick = (label: any, themeSetting: any, layout: any) => {
-    toggleSidebar(label);
-    if (themeSetting) {
-      handleLayoutChange(layout);
+  const handleParentMenuClick = (
+    e: MouseEvent,
+    title: any,
+    isExpanded: boolean
+  ) => {
+    if (title?.submenu) {
+      e.preventDefault();
+      toggleSidebar(title.label, isExpanded);
+    }
+    if (title?.themeSetting) {
+      handleLayoutChange(getLayoutClass(title?.label));
     }
   };
 
@@ -146,30 +178,80 @@ const Sidebar = () => {
     }
   }, [location, previousLocation, dispatch]);
 
-  useEffect(() => {
-    setSubopen(localStorage.getItem("menuOpened"));
-    // Select all 'submenu' elements
-    const submenus = document.querySelectorAll(".submenu");
+  const scrollActiveMenuIntoView = useCallback(() => {
+    const run = () => {
+      const menu = document.getElementById("sidebar-menu");
+      const active =
+        (menu?.querySelector("a.active.submenu-two") as HTMLElement | null) ||
+        (menu?.querySelector("ul li ul li a.active") as HTMLElement | null) ||
+        (menu?.querySelector("a.active") as HTMLElement | null);
+      if (!active) return;
 
-     const mainWrapper = document.querySelector('.main-wrapper');
-    if (mainWrapper) {
-      mainWrapper.classList.remove('slide-nav');
+      const psContainer =
+        (sidebarScrollRef.current as { _container?: HTMLElement } | null)?._container ??
+        (document.querySelector("#sidebar .ps") as HTMLElement | null);
+
+      if (psContainer) {
+        const containerRect = psContainer.getBoundingClientRect();
+        const activeRect = active.getBoundingClientRect();
+        const relativeTop =
+          activeRect.top - containerRect.top + psContainer.scrollTop;
+        const target =
+          relativeTop - containerRect.height / 2 + activeRect.height / 2;
+        psContainer.scrollTo({ top: Math.max(0, target), behavior: "auto" });
+        (sidebarScrollRef.current as { _ps?: { update: () => void } } | null)?._ps?.update?.();
+      } else {
+        active.scrollIntoView({ block: "center", behavior: "auto" });
+      }
+    };
+    requestAnimationFrame(() => requestAnimationFrame(run));
+  }, []);
+
+  useEffect(() => {
+    const { subOpen: openMenu, subsidebar: openSub } = findMenuOpenState(
+      SidebarData,
+      Location.pathname
+    );
+    setSubopen(openMenu);
+    setSubsidebar(openSub);
+    setCollapsedMenus(new Set());
+    setCollapsedSubMenus(new Set());
+    if (openMenu) {
+      localStorage.setItem("menuOpened", openMenu);
+    } else {
+      localStorage.removeItem("menuOpened");
     }
-    // Loop through each 'submenu'
+
+    const mainWrapper = document.querySelector(".main-wrapper");
+    if (mainWrapper) {
+      mainWrapper.classList.remove("slide-nav");
+    }
+
+    const submenus = document.querySelectorAll(".submenu");
     submenus.forEach((submenu) => {
-      // Find all 'li' elements within the 'submenu'
       const listItems = submenu.querySelectorAll("li");
       submenu.classList.remove("active");
-      // Check if any 'li' has the 'active' class
       listItems.forEach((item) => {
         if (item.classList.contains("active")) {
-          // Add 'active' class to the 'submenu'
           submenu.classList.add("active");
-          return;
         }
       });
     });
-  }, [Location.pathname]);
+  }, [Location.pathname, SidebarData]);
+
+  useEffect(() => {
+    scrollActiveMenuIntoView();
+  }, [Location.pathname, scrollActiveMenuIntoView]);
+
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        scrollActiveMenuIntoView();
+      }
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, [scrollActiveMenuIntoView]);
 
   const onMouseEnter = () => {
     if (dataLayout === "mini_layout") dispatch(setExpandMenu(true));
@@ -185,7 +267,7 @@ const Sidebar = () => {
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
-        <PerfectScrollbar>
+        <PerfectScrollbar ref={sidebarScrollRef}>
           <div className="sidebar-inner slimscroll">
             <div id="sidebar-menu" className="sidebar-menu">
               <div className="sidebar-search mb-3 px-3 mt-3">
@@ -234,42 +316,37 @@ const Sidebar = () => {
                     </h6>
                     <ul>
                       {mainLabel?.submenuItems?.map((title: any) => {
-                        // Flatten all nested links for active state matching
-                        const flatLinks: string[] = [
-                          title?.link,
-                          title?.subLink1,
-                          title?.subLink2,
-                          title?.subLink3,
-                          title?.subLink4,
-                          title?.subLink5,
-                          title?.subLink6,
-                          title?.subLink7,
-                          ...(title?.submenuItems?.flatMap((link: any) => {
-                            return [
-                              link?.link,
-                              ...(link?.submenuItems?.map(
-                                (item: any) => item?.link
-                              ) || []),
-                            ];
-                          }) || []),
-                        ].filter(Boolean); // remove undefined/null
-
-                        const isActive = flatLinks.includes(Location.pathname);
+                        const isRouteActive = itemMatchesPath(title, Location.pathname);
+                        const hasSubmenu =
+                          title?.submenu === true &&
+                          Array.isArray(title?.submenuItems) &&
+                          title.submenuItems.length > 0;
+                        const menuExpanded =
+                          !collapsedMenus.has(title?.label) &&
+                          (subOpen === title?.label ||
+                            (isRouteActive && hasSubmenu) ||
+                            Boolean(searchQuery.trim()));
+                        const hasActiveChild =
+                          hasSubmenu && hasActiveDescendant(title, Location.pathname);
+                        const parentLinkClass = [
+                          menuExpanded && hasSubmenu ? "subdrop" : "",
+                          hasActiveChild ? "parent-has-active" : "",
+                          isRouteActive && !hasSubmenu ? "active" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ");
 
                         return (
-                          <li className="submenu" key={title.label}>
+                          <li
+                            className={`submenu${menuExpanded ? " submenu-open" : ""}`}
+                            key={title.label}
+                          >
                             <Link
                               to={title?.submenu ? "#" : title?.link}
-                              onClick={() =>
-                                handleClick(
-                                  title?.label,
-                                  title?.themeSetting,
-                                  getLayoutClass(title?.label)
-                                )
+                              onClick={(e) =>
+                                handleParentMenuClick(e, title, menuExpanded)
                               }
-                              className={`${
-                                subOpen === title?.label ? "subdrop" : ""
-                              } ${isActive ? "active" : ""}`}
+                              className={parentLinkClass}
                             >
                               <i className={title.icon}></i>
                               <span>{title?.label}</span>
@@ -284,75 +361,76 @@ const Sidebar = () => {
                             </Link>
 
                             {/* Submenu Level 1 */}
-                            {title?.submenu !== false &&
-                              (subOpen === title?.label || searchQuery.trim()) && (
-                                <ul style={{ display: (subOpen === title?.label || searchQuery.trim()) ? "block" : "none" }}>
-                                  {title?.submenuItems?.map((item: any) => {
-                                    const subLinks: string[] = [
-                                      item?.link,
-                                      item?.subLink1,
-                                      item?.subLink2,
-                                      item?.subLink3,
-                                      item?.subLink4,
-                                      item?.subLink5,
-                                      item?.subLink6,
-                                      ...(item?.submenuItems?.map(
-                                        (sub: any) => sub?.link
-                                      ) || []),
-                                    ].filter(Boolean);
-
-                                    const isSubActive = subLinks.includes(
+                            {hasSubmenu && (
+                                <ul>
+                                  {title.submenuItems.map((item: any) => {
+                                    const isSubActive = itemMatchesPath(
+                                      item,
                                       Location.pathname
                                     );
+                                    const hasNestedSubmenu =
+                                      Array.isArray(item?.submenuItems) &&
+                                      item.submenuItems.length > 0;
+                                    const subExpanded =
+                                      !collapsedSubMenus.has(item?.label) &&
+                                      (subsidebar === item?.label ||
+                                        (isSubActive && hasNestedSubmenu) ||
+                                        Boolean(searchQuery.trim()));
+                                    const hasActiveNestedChild =
+                                      hasNestedSubmenu &&
+                                      hasActiveDescendant(item, Location.pathname) &&
+                                      !isSubActive;
+                                    const subLinkClass = [
+                                      subExpanded && hasNestedSubmenu ? "subdrop" : "",
+                                      hasActiveNestedChild ? "parent-has-active" : "",
+                                      isSubActive && !hasNestedSubmenu ? "active" : "",
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" ");
 
                                     return (
                                       <li
                                         key={item.label}
                                         className={
-                                          item?.submenuItems
-                                            ? "submenu submenu-two"
+                                          hasNestedSubmenu
+                                            ? `submenu submenu-two${subExpanded ? " submenu-open" : ""}`
                                             : ""
                                         }
                                       >
                                         <Link
-                                          to={item?.link}
-                                          className={`${
-                                            isSubActive ? "active" : ""
-                                          } ${
-                                            (subsidebar === item?.label || searchQuery.trim())
-                                              ? "subdrop"
-                                              : ""
-                                          }`}
-                                          onClick={() =>
-                                            toggleSubsidebar(item?.label)
-                                          }
+                                          to={hasNestedSubmenu ? "#" : item?.link}
+                                          className={subLinkClass}
+                                          onClick={(e) => {
+                                            if (hasNestedSubmenu) {
+                                              e.preventDefault();
+                                              toggleSubsidebar(item?.label, subExpanded);
+                                            }
+                                          }}
                                         >
                                           {item?.label}
                                           <span
                                             className={
-                                              item?.submenu ? "menu-arrow" : ""
+                                              hasNestedSubmenu ? "menu-arrow" : ""
                                             }
                                           />
                                         </Link>
 
                                         {/* Submenu Level 2 */}
-                                        {item?.submenuItems &&
-                                          (subsidebar === item?.label || searchQuery.trim()) && (
-                                            <ul style={{ display: "block" }}>
-                                              {item?.submenuItems?.map(
+                                        {hasNestedSubmenu && (
+                                            <ul>
+                                              {item.submenuItems.map(
                                                 (subItem: any) => {
-                                                  const isDeepActive =
-                                                    subItem?.link ===
-                                                    Location.pathname;
+                                                  const isDeepActive = itemMatchesPath(
+                                                    subItem,
+                                                    Location.pathname
+                                                  );
 
                                                   return (
                                                     <li key={subItem.label}>
                                                       <Link
                                                         to={subItem?.link}
-                                                        className={`submenu-two ${
-                                                          isDeepActive
-                                                            ? "active"
-                                                            : ""
+                                                        className={`submenu-two${
+                                                          isDeepActive ? " active" : ""
                                                         }`}
                                                       >
                                                         {subItem?.label}
