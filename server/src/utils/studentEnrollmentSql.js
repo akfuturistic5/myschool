@@ -49,7 +49,22 @@ function subqueryLatestClassId(studentIdSql, opts = {}) {
 )`;
 }
 
+/**
+ * Enrollment join for class/year-scoped reports (attendance, grade report, etc.).
+ * When academicYearId is set, lateral picks the ledger row for that year.
+ */
+function buildEnrollmentJoin(studentIdSql, params, academicYearId) {
+  const n = Number(academicYearId);
+  const ayId = Number.isFinite(n) && n > 0 ? n : null;
+  if (ayId != null) {
+    params.push(ayId);
+    return lateralCurrentEnrollment(studentIdSql, { academicYearIdParam: `$${params.length}` });
+  }
+  return lateralCurrentEnrollment(studentIdSql);
+}
+
 module.exports = {
   lateralCurrentEnrollment,
   subqueryLatestClassId,
+  buildEnrollmentJoin,
 };

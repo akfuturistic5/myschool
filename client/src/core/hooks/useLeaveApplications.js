@@ -252,6 +252,7 @@ export const useLeaveApplications = (options = {}) => {
             endDate,
             noOfDays: String(noOfDays),
             appliedOn,
+            applyOn: appliedOn,
             photoUrl,
             description:
               row.reason ||
