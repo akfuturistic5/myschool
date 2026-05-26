@@ -5,11 +5,16 @@ import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
 import CommonSelect from "../../../core/common/commonSelect";
 import Table from "../../../core/common/dataTable/index";
-import dayjs from "dayjs";
+import dayjs, { type Dayjs } from "dayjs";
+import { DatePicker } from "antd";
 import type { TableData } from "../../../core/data/interface";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { apiService } from "../../../core/services/apiService";
 import { tallyMonthAttendanceDay } from "../../../core/utils/attendanceReportStatus";
+import {
+  capMonthlyReportDaysToToday,
+  prepareMonthlyAttendanceGrid,
+} from "../../../core/utils/attendanceReportUtils";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { useStudents } from "../../../core/hooks/useStudents";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
@@ -27,7 +32,9 @@ const StudentAttendanceType = () => {
   const { students } = useStudents();
   const [classOptions, setClassOptions] = useState<Array<{ value: string; label: string }>>([{ value: "all", label: "All Classes" }]);
   const [selectedClassId, setSelectedClassId] = useState<string>("all");
+  const [selectedMonth, setSelectedMonth] = useState<string>(dayjs().format("YYYY-MM"));
   const [appliedClassId, setAppliedClassId] = useState<string>("all");
+  const [appliedMonth, setAppliedMonth] = useState<string>(dayjs().format("YYYY-MM"));
   const [refreshTick, setRefreshTick] = useState(0);
   const [reportData, setReportData] = useState<any>({ month: null, days: [], rows: [] });
   const [loading, setLoading] = useState(true);
@@ -37,9 +44,15 @@ const StudentAttendanceType = () => {
     let cancelled = false;
 
     const fetchFilterOptions = async () => {
+      if (academicYearId == null) {
+        setClassOptions([{ value: "all", label: "All Classes" }]);
+        return;
+      }
       try {
-        const classesPromise = apiService.getClasses();
-        const [classesResult, sectionsResult] = await Promise.allSettled([classesPromise, apiService.getSections()]);
+        const [classesResult, sectionsResult] = await Promise.allSettled([
+          apiService.getClasses(academicYearId),
+          apiService.getSections(),
+        ]);
         if (cancelled) return;
 
         const classesResponse =
@@ -81,6 +94,12 @@ const StudentAttendanceType = () => {
     let cancelled = false;
 
     const fetchReport = async () => {
+      if (academicYearId == null) {
+        setLoading(false);
+        setError("Select an academic year from the header to load the attendance report.");
+        setReportData({ month: null, days: [], rows: [] });
+        return;
+      }
       try {
         setLoading(true);
         setError(null);
@@ -88,7 +107,7 @@ const StudentAttendanceType = () => {
           classId: appliedClassId !== "all" ? appliedClassId : null,
           sectionId: null,
           academicYearId,
-          month: dayjs().format("YYYY-MM"),
+          month: appliedMonth,
         });
         if (!cancelled) {
           setReportData(res?.data || { month: null, days: [], rows: [] });
@@ -107,11 +126,12 @@ const StudentAttendanceType = () => {
     return () => {
       cancelled = true;
     };
-  }, [academicYearId, appliedClassId, refreshTick]);
+  }, [academicYearId, appliedClassId, appliedMonth, refreshTick]);
 
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const handleApplyClick = () => {
     setAppliedClassId(selectedClassId);
+    setAppliedMonth(selectedMonth);
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
@@ -119,7 +139,9 @@ const StudentAttendanceType = () => {
   const handleResetFilters = (e: React.MouseEvent) => {
     e.preventDefault();
     setSelectedClassId("all");
+    setSelectedMonth(dayjs().format("YYYY-MM"));
     setAppliedClassId("all");
+    setAppliedMonth(dayjs().format("YYYY-MM"));
   };
   const handleRefresh = () => setRefreshTick((prev) => prev + 1);
 
@@ -131,34 +153,42 @@ const StudentAttendanceType = () => {
     return map;
   }, [students]);
 
+  const reportDays = useMemo(
+    () => capMonthlyReportDaysToToday(reportData?.days, reportData?.month || appliedMonth),
+    [reportData?.days, reportData?.month, appliedMonth]
+  );
+
   const data = useMemo(() => {
-    return (Array.isArray(reportData.rows) ? reportData.rows : [])
-      .map((row: any, index: number) => {
-        const student = studentMap.get(String(row.studentId)) || {};
-        const totals = { present: 0, late: 0, half_day: 0, absent: 0, holiday: 0 };
-        Object.values(row.daily || {}).forEach((status: any) => {
-          tallyMonthAttendanceDay(String(status), totals);
-        });
-        return {
-          key: String(index + 1),
-          studentId: row.studentId,
-          admissionNo: row.admissionNo || "—",
-          date: student.admission_date ? new Date(student.admission_date).toLocaleDateString() : "—",
-          name: row.name || "—",
-          img: row.img || "",
-          gender: row.gender || student.gender || "",
-          class: student.class_name || "—",
-          dob: student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : "—",
-          fatherName: student.father_name || student.mother_name || "—",
-          count: Object.keys(row.daily || {}).length,
-          presentCount: totals.present,
-          lateCount: totals.late,
-          halfDayCount: totals.half_day,
-          absentCount: totals.absent,
-          holidayCount: totals.holiday,
-        };
+    const holidayDates = Array.isArray(reportData?.holiday_dates) ? reportData.holiday_dates : [];
+    const gridRows = prepareMonthlyAttendanceGrid(reportData?.rows, reportDays, holidayDates);
+
+    return gridRows.map((row, index) => {
+      const student = studentMap.get(String(row.studentId)) || {};
+      const totals = { present: 0, late: 0, half_day: 0, absent: 0, holiday: 0 };
+      reportDays.forEach((d) => {
+        const status = row.daily?.[d.date];
+        tallyMonthAttendanceDay(String(status), totals);
       });
-  }, [reportData.rows, studentMap]);
+      return {
+        key: String(row.studentId ?? index + 1),
+        studentId: row.studentId,
+        admissionNo: student.admission_number || row.rollNo || "—",
+        date: student.admission_date ? new Date(student.admission_date).toLocaleDateString() : "—",
+        name: row.name || "—",
+        img: student.photo_url || student.avatar || "",
+        gender: student.gender || "",
+        class: student.class_name || student.class || "—",
+        dob: student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : "—",
+        fatherName: student.father_name || student.mother_name || "—",
+        count: reportDays.length,
+        presentCount: totals.present,
+        lateCount: totals.late,
+        halfDayCount: totals.half_day,
+        absentCount: totals.absent,
+        holidayCount: totals.holiday,
+      };
+    });
+  }, [reportData?.rows, reportData?.holiday_dates, reportDays, studentMap]);
 
   const exportColumns = useMemo(
     () => [
@@ -397,7 +427,19 @@ const StudentAttendanceType = () => {
                             </div>
                           </div>
                           <div className="col-md-12">
-                            <div className="mb-0" />
+                            <div className="mb-0">
+                              <label className="form-label">Month</label>
+                              <DatePicker
+                                picker="month"
+                                className="form-control datetimepicker"
+                                value={dayjs(`${selectedMonth}-01`)}
+                                onChange={(value) =>
+                                  setSelectedMonth((value || dayjs()).format("YYYY-MM"))
+                                }
+                                allowClear={false}
+                                getPopupContainer={() => dropdownMenuRef.current || document.body}
+                              />
+                            </div>
                           </div>
                         </div>
                       </div>

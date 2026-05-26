@@ -19,8 +19,8 @@ import {
   isHolidayAttendanceCompound,
 } from "../../../core/utils/attendanceReportStatus";
 import {
-  applyHolidayDatesToMonthlyGrid,
-  normalizeMonthlyAttendanceGridRows,
+  capMonthlyReportDaysToToday,
+  prepareMonthlyAttendanceGrid,
 } from "../../../core/utils/attendanceReportUtils";
 
 const compareText = (left: unknown, right: unknown) =>
@@ -82,10 +82,14 @@ const AttendanceReport = () => {
     let cancelled = false;
 
     const fetchFilterOptions = async () => {
+      if (academicYearId == null) {
+        setClassOptions([{ value: "all", label: "All Classes" }]);
+        setSectionsByClassId({});
+        return;
+      }
       try {
-        const classesPromise = apiService.getClasses();
         const [classesResult, sectionsResult] = await Promise.allSettled([
-          classesPromise,
+          apiService.getClasses(academicYearId),
           apiService.getSections(),
         ]);
 
@@ -160,6 +164,12 @@ const AttendanceReport = () => {
     let cancelled = false;
 
     const fetchReport = async () => {
+      if (academicYearId == null) {
+        setLoading(false);
+        setError("Select an academic year from the header to load the attendance report.");
+        setReportData({ month: appliedMonth, days: [], rows: [] });
+        return;
+      }
       try {
         setLoading(true);
         setError(null);
@@ -190,25 +200,26 @@ const AttendanceReport = () => {
     };
   }, [academicYearId, appliedClassId, appliedSectionId, appliedMonth, refreshTick]);
 
+  const reportDays = useMemo(
+    () => capMonthlyReportDaysToToday(reportData?.days, reportData?.month || appliedMonth),
+    [reportData?.days, reportData?.month, appliedMonth]
+  );
+
   const data = useMemo(() => {
-    const days = Array.isArray(reportData?.days) ? reportData.days : [];
+    const days = reportDays;
     const holidayDates = Array.isArray(reportData?.holiday_dates) ? reportData.holiday_dates : [];
-    return applyHolidayDatesToMonthlyGrid(
-      normalizeMonthlyAttendanceGridRows(reportData?.rows),
-      days,
-      holidayDates
-    ).map((row) => ({
+    return prepareMonthlyAttendanceGrid(reportData?.rows, days, holidayDates).map((row) => ({
       ...row,
       key: row.studentId ?? row.key,
       name: row.name,
       studentId: row.studentId,
       rollNo: row.rollNo,
     }));
-  }, [reportData]);
+  }, [reportData, reportDays]);
 
   const dayColumns = useMemo(
     () =>
-      (Array.isArray(reportData.days) ? reportData.days : []).map((day: any) => ({
+      reportDays.map((day: any) => ({
         title: (
           <div className="text-center">
             <span className="day-num d-block">{String(day.day).padStart(2, "0")}</span>
@@ -248,14 +259,12 @@ const AttendanceReport = () => {
           if (!hasStatus) {
             return (
               <span
-                className="attendance-range"
-                style={{
-                  display: "inline-flex",
-                  minWidth: 22,
-                  justifyContent: "center",
-                }}
-                title={`${day.date}: Not Marked`}
-              />
+                className="attendance-range bg-danger"
+                style={pillStyle}
+                title={`${day.date}: Absent`}
+              >
+                A
+              </span>
             );
           }
           if (isHolidayAttendanceCompound(status)) {
@@ -293,7 +302,7 @@ const AttendanceReport = () => {
           );
         },
       })),
-    [reportData.days]
+    [reportDays]
   );
 
   const columns = useMemo(
@@ -434,7 +443,7 @@ const AttendanceReport = () => {
   );
 
   const handleExportExcel = () => {
-    const dayExportColumns = (Array.isArray(reportData.days) ? reportData.days : []).map((day: any) => ({
+    const dayExportColumns = reportDays.map((day: any) => ({
       key: String(day.date),
       label: `${String(day.day).padStart(2, "0")} ${String(day.weekdayShort || "").toUpperCase()}`,
     }));

@@ -351,6 +351,7 @@ export const all_routes = {
   //Report
   attendanceReport: "/report/attendance-report",
   classReport: "/report/class-report",
+  classReportDetail: "/report/class-report",
   studentReport: "/report/student-report",
   gradeReport: "/report/grade-report",
   leaveReport: "/report/leave-report",

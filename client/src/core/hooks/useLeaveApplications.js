@@ -55,13 +55,7 @@ export const useLeaveApplications = (options = {}) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const shouldRetryWithoutAcademicYear =
-    !pendingOnly &&
-    academicYearId != null &&
-    String(status || '')
-      .toLowerCase()
-      .split(/[, ]+/)
-      .filter(Boolean)
-      .some((s) => s === 'approved' || s === 'rejected');
+    !pendingOnly && academicYearId != null;
 
   const buildAdminParams = (withAcademicYear = true, refreshKey = null) => ({
     limit,
@@ -181,7 +175,10 @@ export const useLeaveApplications = (options = {}) => {
       const normalizedDataArr = Array.isArray(normalizedRawData)
         ? normalizedRawData
         : (Array.isArray(normalizedRawData?.data) ? normalizedRawData.data : normalizedRawData?.items) || [];
-      if (response.status === 'SUCCESS' && Array.isArray(normalizedDataArr)) {
+      const isSuccess =
+        response &&
+        (response.status === 'SUCCESS' || response.success === true);
+      if (isSuccess && Array.isArray(normalizedDataArr)) {
         let rows = normalizedDataArr;
         if (!parentChildren && !studentOnly) {
           rows = rows.filter((r, i, a) => {
@@ -242,8 +239,10 @@ export const useLeaveApplications = (options = {}) => {
             id: row.id,
             leaveTypeId: row.leave_type_id ?? row.leaveTypeId ?? null,
             studentId: row.student_id ?? null,
-            staffId: row.staff_id ?? null,
-            applicantType: row.applicant_type || (row.student_id ? 'student' : row.staff_id ? 'staff' : null),
+            staffId: row.staff_id ?? row.applicant_staff_id ?? null,
+            applicantType:
+              row.applicant_type ||
+              (row.student_id != null ? 'student' : row.staff_id != null || row.applicant_staff_id != null ? 'staff' : null),
             name,
             leaveType,
             role,
@@ -279,6 +278,8 @@ export const useLeaveApplications = (options = {}) => {
         setList(mapped);
       } else {
         setList([]);
+        const errMsg = response?.message || response?.error;
+        if (errMsg) setError(String(errMsg));
       }
     } catch (err) {
       console.error('Error fetching leave applications:', err);

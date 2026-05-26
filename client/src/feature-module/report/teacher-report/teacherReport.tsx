@@ -1,5 +1,6 @@
 /* eslint-disable */
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import Table from "../../../core/common/dataTable/index";
 import { Link } from "react-router-dom";
@@ -10,6 +11,8 @@ import CommonSelect from "../../../core/common/commonSelect";
 import { gender, status } from "../../../core/common/selectoption/selectoption";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { useTeachers } from "../../../core/hooks/useTeachers";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { apiService } from "../../../core/services/apiService";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import type { Dayjs } from "dayjs";
 
@@ -33,8 +36,25 @@ const genderKey = (g: string | null | undefined) => {
   return v;
 };
 
+const asArray = (response: any) => {
+  if (!response) return [];
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response.data)) return response.data;
+  return [];
+};
+
+const staffIdFromTeacher = (teacher: any) => {
+  const id = teacher?.staff_id ?? teacher?.id;
+  return id != null ? String(id) : "";
+};
+
 const TeacherReport = () => {
-  const { teachers, loading, error, refetch } = useTeachers();
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const { teachers, loading: teachersLoading, error: teachersError, refetch: refetchTeachers } = useTeachers();
+  const [assignmentsLoading, setAssignmentsLoading] = useState(true);
+  const [assignmentsError, setAssignmentsError] = useState<string | null>(null);
+  const [classAssignmentsByStaff, setClassAssignmentsByStaff] = useState<Record<string, any[]>>({});
+  const [subjectAssignmentsByStaff, setSubjectAssignmentsByStaff] = useState<Record<string, any[]>>({});
   const routes = all_routes;
   const [selectedClass, setSelectedClass] = useState<string>("All");
   const [selectedSubject, setSelectedSubject] = useState<string>("All");
@@ -46,6 +66,59 @@ const TeacherReport = () => {
   const [appliedGender, setAppliedGender] = useState<string>("All");
   const [appliedStatus, setAppliedStatus] = useState<string>("All");
 
+  const fetchAssignments = useCallback(async () => {
+    try {
+      setAssignmentsLoading(true);
+      setAssignmentsError(null);
+      const params =
+        academicYearId != null && academicYearId !== ""
+          ? { academicYearId }
+          : {};
+      const [classRes, subjectRes] = await Promise.all([
+        apiService.getClassTeacherAssignments(params),
+        apiService.getSubjectTeacherAssignments(params),
+      ]);
+
+      const classByStaff: Record<string, any[]> = {};
+      asArray(classRes).forEach((row: any) => {
+        const sid = row.teacherId != null ? String(row.teacherId) : "";
+        if (!sid) return;
+        if (!classByStaff[sid]) classByStaff[sid] = [];
+        classByStaff[sid].push(row);
+      });
+
+      const subjectByStaff: Record<string, any[]> = {};
+      asArray(subjectRes).forEach((row: any) => {
+        const sid = row.teacherId != null ? String(row.teacherId) : "";
+        if (!sid) return;
+        if (!subjectByStaff[sid]) subjectByStaff[sid] = [];
+        subjectByStaff[sid].push(row);
+      });
+
+      setClassAssignmentsByStaff(classByStaff);
+      setSubjectAssignmentsByStaff(subjectByStaff);
+    } catch (err: any) {
+      console.error("Error fetching teacher assignments:", err);
+      setAssignmentsError(err?.message || "Failed to fetch teacher assignments");
+      setClassAssignmentsByStaff({});
+      setSubjectAssignmentsByStaff({});
+    } finally {
+      setAssignmentsLoading(false);
+    }
+  }, [academicYearId]);
+
+  useEffect(() => {
+    fetchAssignments();
+  }, [fetchAssignments]);
+
+  const loading = teachersLoading || assignmentsLoading;
+  const error = teachersError || assignmentsError;
+
+  const refetch = () => {
+    refetchTeachers();
+    fetchAssignments();
+  };
+
   const data = useMemo(
     () =>
       (Array.isArray(teachers) ? teachers : []).map((teacher: any, index: number) => {
@@ -56,14 +129,35 @@ const TeacherReport = () => {
             : "Inactive";
         const joinRaw = teacher.joining_date ? new Date(teacher.joining_date).toISOString().slice(0, 10) : "";
         const dobRaw = teacher.date_of_birth ? new Date(teacher.date_of_birth).toISOString().slice(0, 10) : "";
+
+        const staffKey = staffIdFromTeacher(teacher);
+        const classSet = new Set<string>();
+        const subjectSet = new Set<string>();
+
+        (classAssignmentsByStaff[staffKey] || []).forEach((a: any) => {
+          const cn = String(a.className || "").trim();
+          if (cn) classSet.add(cn);
+        });
+        (subjectAssignmentsByStaff[staffKey] || []).forEach((a: any) => {
+          const cn = String(a.className || "").trim();
+          const sn = String(a.subjectName || "").trim();
+          if (cn) classSet.add(cn);
+          if (sn) subjectSet.add(sn);
+        });
+
+        const classNames = Array.from(classSet).sort((a, b) => a.localeCompare(b));
+        const subjectNames = Array.from(subjectSet).sort((a, b) => a.localeCompare(b));
+
         return {
           key: teacher.id || `teacher-report-${index}`,
           teacherId: teacher.id,
           teacher,
           employeeCode: teacher.employee_code || "—",
           name,
-          class: teacher.class_name || "—",
-          subject: teacher.subject_name || "—",
+          classNames,
+          subjectNames,
+          class: classNames.length ? classNames.join(", ") : "NA",
+          subject: subjectNames.length ? subjectNames.join(", ") : "NA",
           genderLabel: formatGenderLabel(teacher.gender),
           genderFilter: genderKey(teacher.gender),
           email: teacher.email || "—",
@@ -77,7 +171,7 @@ const TeacherReport = () => {
           imgSrc: teacher.photo_url || "",
         };
       }),
-    [teachers]
+    [teachers, classAssignmentsByStaff, subjectAssignmentsByStaff]
   );
 
   const classOptions = useMemo(() => {
@@ -105,8 +199,12 @@ const TeacherReport = () => {
   const filteredData = useMemo(
     () =>
       data.filter((row) => {
-        const classMatched = appliedClass === "All" || row.class === appliedClass;
-        const subjectMatched = appliedSubject === "All" || row.subject === appliedSubject;
+        const classMatched =
+          appliedClass === "All" ||
+          (Array.isArray(row.classNames) && row.classNames.includes(appliedClass));
+        const subjectMatched =
+          appliedSubject === "All" ||
+          (Array.isArray(row.subjectNames) && row.subjectNames.includes(appliedSubject));
         const genderMatched = appliedGender === "All" || row.genderFilter === appliedGender;
         const statusMatched = appliedStatus === "All" || row.status === appliedStatus;
         const dateMatched =
@@ -339,7 +437,7 @@ const TeacherReport = () => {
                     Filter
                   </Link>
                   <div className="dropdown-menu drop-width" ref={dropdownMenuRef}>
-                    <form>
+                    <form onSubmit={(e) => e.preventDefault()}>
                       <div className="d-flex align-items-center border-bottom p-3">
                         <h4>Filter</h4>
                       </div>
@@ -392,12 +490,12 @@ const TeacherReport = () => {
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3" onClick={handleResetFilters}>
+                        <button type="button" className="btn btn-light me-3" onClick={handleResetFilters}>
                           Reset
-                        </Link>
-                        <Link to="#" className="btn btn-primary" onClick={handleApplyClick}>
+                        </button>
+                        <button type="button" className="btn btn-primary" onClick={handleApplyClick}>
                           Apply
-                        </Link>
+                        </button>
                       </div>
                     </form>
                   </div>

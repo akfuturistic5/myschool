@@ -4,7 +4,7 @@ const { ROLES } = require('../config/roles');
 const { getAuthContext, isTeacherRole, isAdmin } = require('../utils/accessControl');
 const { resolveAcademicYearId } = require('../utils/academicYear');
 const { buildSummaryFromRows } = require('../utils/attendanceMetrics');
-const { toYmd } = require('../utils/dateOnly');
+const { toYmd, todayLocalYmd } = require('../utils/dateOnly');
 const { hasTable, hasColumn } = require('../utils/schemaInspector');
 const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
 const {
@@ -685,6 +685,26 @@ const parseOptionalPositiveInt = (value) => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
+/** Enrollment for reports/rosters scoped to a specific academic year when provided. */
+function buildEnrollmentJoin(studentIdSql, params, academicYearId) {
+  const ayId = parseOptionalPositiveInt(academicYearId);
+  if (ayId != null) {
+    params.push(ayId);
+    return lateralCurrentEnrollment(studentIdSql, { academicYearIdParam: `$${params.length}` });
+  }
+  return lateralCurrentEnrollment(studentIdSql);
+}
+
+async function buildStudentAttendanceJoin(model, studentIdSql, dateConditionSql, params, academicYearId) {
+  let sql = `LEFT JOIN ${model.table} a ON a.student_id = ${studentIdSql} AND ${dateConditionSql}`;
+  const ayId = parseOptionalPositiveInt(academicYearId);
+  if (ayId != null && (await hasColumn(model.table, 'academic_year_id'))) {
+    params.push(ayId);
+    sql += ` AND a.academic_year_id = $${params.length}`;
+  }
+  return sql;
+}
+
 /** Staff roster/reports: teachers see only themselves; admins may filter by staff_id. */
 const resolveStaffAttendanceScope = async (req, { params, where }) => {
   const ctx = getAuthContext(req);
@@ -1007,6 +1027,7 @@ const getMarkingRoster = async (req, res) => {
 
     if (entityType === 'student') {
       const studentAttendanceModel = await resolveStudentAttendanceModel();
+      const reportAcademicYearId = req.query.academic_year_id ?? null;
       const params = [date];
       let where = "WHERE s.status = 'Active' AND s.deleted_at IS NULL AND enr.class_id IS NOT NULL";
       if (class_id) {
@@ -1019,12 +1040,11 @@ const getMarkingRoster = async (req, res) => {
       }
 
       if (isTeacher) {
-        const academicYearId = req.query.academic_year_id ?? null;
         const access = await ensureTeacherStudentSectionAccess({
           userId: req.user?.id,
           classId: class_id,
           sectionId: section_id,
-          academicYearId,
+          academicYearId: reportAcademicYearId,
         });
         if (!access.ok) {
           return errorResponse(res, access.status, access.message, access.errorCode);
@@ -1040,10 +1060,19 @@ const getMarkingRoster = async (req, res) => {
         })}`;
       }
 
+      const enrollmentJoin = buildEnrollmentJoin('s.id', params, reportAcademicYearId);
+      const attendanceJoin = await buildStudentAttendanceJoin(
+        studentAttendanceModel,
+        's.id',
+        'a.attendance_date = $1::date',
+        params,
+        reportAcademicYearId
+      );
+
       const hasStudentId = await hasColumn('leave_applications', 'student_id');
       const leaveJoin = hasStudentId
         ? `LEFT JOIN leave_applications la ON la.student_id = s.id
-             AND la.start_date <= $1 AND la.end_date >= $1
+             AND la.start_date <= $1::date AND la.end_date >= $1::date
              AND LOWER(TRIM(COALESCE(la.status, ''))) = 'approved'`
         : `LEFT JOIN (SELECT NULL::int AS student_id, NULL::date AS start_date, NULL::date AS end_date, NULL::text AS status, NULL::text AS reason, NULL::int AS id LIMIT 0) la ON false`;
 
@@ -1055,14 +1084,19 @@ const getMarkingRoster = async (req, res) => {
           s.admission_number,
           enr.class_id,
           enr.section_id,
-          CASE WHEN la.id IS NOT NULL THEN 'on_leave' ELSE a.status END AS status,
+          enr.academic_year_id,
+          CASE
+            WHEN la.id IS NOT NULL THEN 'on_leave'
+            WHEN a.status IS NOT NULL AND TRIM(COALESCE(a.status, '')) <> '' THEN a.status
+            ELSE 'absent'
+          END AS status,
           COALESCE(a.${studentAttendanceModel.remarkColumn}, la.reason) AS remark,
           ${studentAttendanceModel.hasCheckInTime ? 'a.check_in_time::text' : 'NULL::text'} AS check_in_time,
           ${studentAttendanceModel.hasCheckOutTime ? 'a.check_out_time::text' : 'NULL::text'} AS check_out_time
         FROM students s
         LEFT JOIN users u ON u.id = s.user_id
-        ${lateralCurrentEnrollment('s.id')}
-        LEFT JOIN ${studentAttendanceModel.table} a ON a.student_id = s.id AND a.attendance_date = $1
+        ${enrollmentJoin}
+        ${attendanceJoin}
         ${leaveJoin}
         ${where}
         ORDER BY u.first_name ASC, u.last_name ASC`;
@@ -1143,10 +1177,15 @@ const getAttendanceReport = async (req, res) => {
     );
     const monthEnd = monthEndResult.rows[0].month_end;
     const monthEndYmd = toYmd(monthEnd);
-    
+    const requestedMonthKey = `${year}-${String(monthNumber).padStart(2, '0')}`;
+    const todayYmd = todayLocalYmd();
+    const reportEndYmd =
+      requestedMonthKey === todayYmd.slice(0, 7) && todayYmd <= monthEndYmd ? todayYmd : monthEndYmd;
+
     const reportDaysMetadata = [];
-    const cur = new Date(monthStart);
-    while (cur <= monthEnd) {
+    const cur = new Date(`${monthStart}T12:00:00`);
+    const endCur = new Date(`${reportEndYmd}T12:00:00`);
+    while (cur <= endCur) {
       reportDaysMetadata.push({
         day: cur.getDate(),
         date: toYmd(cur),
@@ -1157,7 +1196,8 @@ const getAttendanceReport = async (req, res) => {
 
     if (entityType === 'student') {
       const studentAttendanceModel = await resolveStudentAttendanceModel();
-      const params = [monthStart, monthEnd];
+      const reportAcademicYearId = req.query.academic_year_id ?? null;
+      const params = [monthStart, reportEndYmd];
       let where = "WHERE s.status = 'Active' AND s.deleted_at IS NULL AND enr.class_id IS NOT NULL";
       if (class_id) {
         params.push(Number(class_id));
@@ -1170,12 +1210,11 @@ const getAttendanceReport = async (req, res) => {
 
       const { isTeacher } = getUserRoleContext(req.user);
       if (isTeacher) {
-        const academicYearId = req.query.academic_year_id ?? null;
         const access = await ensureTeacherStudentSectionAccess({
           userId: req.user?.id,
           classId: class_id,
           sectionId: section_id,
-          academicYearId,
+          academicYearId: reportAcademicYearId,
         });
         if (!access.ok) {
           return errorResponse(res, access.status, access.message, access.errorCode);
@@ -1189,6 +1228,16 @@ const getAttendanceReport = async (req, res) => {
           staffIdsParamRef,
         })}`;
       }
+
+      const enrollmentJoin = buildEnrollmentJoin('s.id', params, reportAcademicYearId);
+      const attendanceJoin = await buildStudentAttendanceJoin(
+        studentAttendanceModel,
+        's.id',
+        'a.attendance_date BETWEEN $1::date AND $2::date',
+        params,
+        reportAcademicYearId
+      );
+
       const hasStudentId = await hasColumn('leave_applications', 'student_id');
       const leaveJoin = hasStudentId
         ? `LEFT JOIN leave_applications la ON la.student_id = s.id
@@ -1207,23 +1256,22 @@ const getAttendanceReport = async (req, res) => {
           s.admission_number AS "rollNo",
           enr.class_id,
           enr.section_id,
+          enr.academic_year_id,
           a.attendance_date::date AS attendance_date,
           COALESCE(a.status, CASE WHEN la.id IS NOT NULL THEN 'on_leave' ELSE NULL END) AS status,
           COALESCE(a.${studentAttendanceModel.remarkColumn}, la.reason) AS remark
         FROM students s
         LEFT JOIN users u ON u.id = s.user_id
-        ${lateralCurrentEnrollment('s.id')}
-        LEFT JOIN ${studentAttendanceModel.table} a
-          ON a.student_id = s.id
-         AND a.attendance_date BETWEEN $1::date AND $2::date
+        ${enrollmentJoin}
+        ${attendanceJoin}
         ${leaveJoin}
         ${where}
         ORDER BY u.first_name ASC, u.last_name ASC, a.attendance_date ASC
       `,
         params
       );
-      const holidays = await listHolidaysInRange(monthStart, monthEndYmd);
-      const holidayDates = buildHolidayDateSet(holidays, monthStart, monthEndYmd);
+      const holidays = await listHolidaysInRange(monthStart, reportEndYmd);
+      const holidayDates = buildHolidayDateSet(holidays, monthStart, reportEndYmd);
       const rawRows = result.rows || [];
 
       const processedRows = rawRows.map((row) => {
@@ -1277,12 +1325,19 @@ const getAttendanceReport = async (req, res) => {
         days: reportDaysMetadata,
         summary: buildSummaryFromRows(processedRows),
         holiday_dates: Array.from(holidayDates),
-        filters: { entityType, month: `${year}-${String(monthNumber).padStart(2, '0')}`, class_id, section_id },
+        report_end_date: reportEndYmd,
+        filters: {
+          entityType,
+          month: requestedMonthKey,
+          class_id,
+          section_id,
+          academic_year_id: parseOptionalPositiveInt(reportAcademicYearId),
+        },
       });
     }
 
     const remarkColumn = await resolveStaffAttendanceRemarkColumn();
-    const params = [monthStart, monthEnd];
+    const params = [monthStart, reportEndYmd];
     let where = `WHERE ${STAFF_ATTENDANCE_BASE_WHERE}`;
     const staffScope = await resolveStaffAttendanceScope(req, { params, where });
     if (!staffScope.ok) {
@@ -1324,8 +1379,8 @@ const getAttendanceReport = async (req, res) => {
     `,
       params
     );
-    const holidays = await listHolidaysInRange(monthStart, monthEndYmd);
-    const holidayDates = buildHolidayDateSet(holidays, monthStart, monthEndYmd);
+    const holidays = await listHolidaysInRange(monthStart, reportEndYmd);
+    const holidayDates = buildHolidayDateSet(holidays, monthStart, reportEndYmd);
     const rawRows = result.rows || [];
     
     const processedRows = rawRows.map((row) => {
@@ -1381,7 +1436,8 @@ const getAttendanceReport = async (req, res) => {
       days: reportDaysMetadata,
       summary: buildSummaryFromRows(processedRows),
       holiday_dates: Array.from(holidayDates),
-      filters: { entityType, month: `${year}-${String(monthNumber).padStart(2, '0')}`, department_id, designation_id },
+      report_end_date: reportEndYmd,
+      filters: { entityType, month: requestedMonthKey, department_id, designation_id },
     });
   } catch (err) {
     console.error('getAttendanceReport error:', err);
@@ -1392,12 +1448,13 @@ const getAttendanceReport = async (req, res) => {
 const getAttendanceDayWise = async (req, res) => {
   try {
     const { entityType } = req.params;
-    const { date, class_id, section_id, department_id } = req.query;
+    const { date, class_id, section_id, department_id, designation_id } = req.query;
     const params = [date];
     let sql = '';
 
     if (entityType === 'student') {
       const studentAttendanceModel = await resolveStudentAttendanceModel();
+      const reportAcademicYearId = req.query.academic_year_id ?? null;
       const { isTeacher } = getUserRoleContext(req.user);
       let where = "WHERE s.status = 'Active' AND s.deleted_at IS NULL AND enr.class_id IS NOT NULL";
       if (class_id) {
@@ -1409,12 +1466,11 @@ const getAttendanceDayWise = async (req, res) => {
         where += ` AND enr.section_id = $${params.length}`;
       }
       if (isTeacher) {
-        const academicYearId = req.query.academic_year_id ?? null;
         const access = await ensureTeacherStudentSectionAccess({
           userId: req.user?.id,
           classId: class_id,
           sectionId: section_id,
-          academicYearId,
+          academicYearId: reportAcademicYearId,
         });
         if (!access.ok) {
           return errorResponse(res, access.status, access.message, access.errorCode);
@@ -1428,6 +1484,14 @@ const getAttendanceDayWise = async (req, res) => {
           staffIdsParamRef,
         })}`;
       }
+      const enrollmentJoin = buildEnrollmentJoin('s.id', params, reportAcademicYearId);
+      const attendanceJoin = await buildStudentAttendanceJoin(
+        studentAttendanceModel,
+        's.id',
+        'a.attendance_date = $1::date',
+        params,
+        reportAcademicYearId
+      );
       sql = `
         SELECT
           s.id AS entity_id,
@@ -1436,14 +1500,14 @@ const getAttendanceDayWise = async (req, res) => {
           a.${studentAttendanceModel.remarkColumn} AS remark
         FROM students s
         LEFT JOIN users u ON u.id = s.user_id
-        ${lateralCurrentEnrollment('s.id')}
-        LEFT JOIN ${studentAttendanceModel.table} a ON a.student_id = s.id AND a.attendance_date = $1::date
+        ${enrollmentJoin}
+        ${attendanceJoin}
         ${where}
         ORDER BY u.first_name, u.last_name`;
     } else {
       const remarkColumn = await resolveStaffAttendanceRemarkColumn();
       let where = `WHERE ${STAFF_ATTENDANCE_BASE_WHERE}`;
-      where = appendStaffOrgFilters({ params, where, departmentId: department_id, designationId: null });
+      where = appendStaffOrgFilters({ params, where, departmentId: department_id, designationId: designation_id });
       const academicYearJoinFilter = '';
       sql = `
         SELECT

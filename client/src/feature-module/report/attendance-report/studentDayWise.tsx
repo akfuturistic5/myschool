@@ -14,7 +14,12 @@ import {
   formatAttendanceDayHumanLabel,
   isHolidayAttendanceCompound,
 } from "../../../core/utils/attendanceReportStatus";
+import {
+  capMonthlyReportDaysToToday,
+  prepareMonthlyAttendanceGrid,
+} from "../../../core/utils/attendanceReportUtils";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { useStudents } from "../../../core/hooks/useStudents";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
 const compareText = (left: unknown, right: unknown) =>
@@ -24,6 +29,7 @@ const StudentDayWise = () => {
   const routes = all_routes;
   const location = useLocation();
   const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const { students } = useStudents();
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const [classOptions, setClassOptions] = useState<Array<{ value: string; label: string }>>([{ value: "all", label: "All Classes" }]);
   const [sectionsByClassId, setSectionsByClassId] = useState<Record<string, Array<{ value: string; label: string }>>>(
@@ -44,9 +50,16 @@ const StudentDayWise = () => {
     let cancelled = false;
 
     const fetchFilterOptions = async () => {
+      if (academicYearId == null) {
+        setClassOptions([{ value: "all", label: "All Classes" }]);
+        setSectionsByClassId({});
+        return;
+      }
       try {
-        const classesPromise = apiService.getClasses();
-        const [classesResult, sectionsResult] = await Promise.allSettled([classesPromise, apiService.getSections()]);
+        const [classesResult, sectionsResult] = await Promise.allSettled([
+          apiService.getClasses(academicYearId),
+          apiService.getSections(),
+        ]);
         if (cancelled) return;
 
         const classesResponse =
@@ -124,6 +137,12 @@ const StudentDayWise = () => {
     let cancelled = false;
 
     const fetchReport = async () => {
+      if (academicYearId == null) {
+        setLoading(false);
+        setError("Select an academic year from the header to load the attendance report.");
+        setReportData({ month: null, days: [], rows: [] });
+        return;
+      }
       try {
         setLoading(true);
         setError(null);
@@ -177,40 +196,47 @@ const StudentDayWise = () => {
 
   const data = useMemo(() => {
     const dayKey = dayjs(appliedDate).format("YYYY-MM-DD");
-    return (Array.isArray(reportData.rows) ? reportData.rows : [])
-      .map((row: any, index: number) => {
-        const status = row.daily?.[dayKey];
-        if (!status) return null;
-        const label = formatAttendanceDayHumanLabel(status);
-        let badgeClass = "badge-soft-secondary";
-        if (isHolidayAttendanceCompound(status)) {
-          badgeClass = "badge-soft-info";
-        } else if (status === "present") {
-          badgeClass = "badge-soft-success";
-        } else if (status === "late") {
-          badgeClass = "badge-soft-warning";
-        } else if (status === "absent") {
-          badgeClass = "badge-soft-danger";
-        } else if (status === "half_day") {
-          badgeClass = "badge-soft-primary";
-        } else if (status === "holiday") {
-          badgeClass = "badge-soft-info";
-        }
+    const monthKey = dayjs(appliedDate).format("YYYY-MM");
+    const reportDays = capMonthlyReportDaysToToday(reportData?.days, monthKey);
+    const holidayDates = Array.isArray(reportData?.holiday_dates) ? reportData.holiday_dates : [];
+    const gridRows = prepareMonthlyAttendanceGrid(reportData?.rows, reportDays, holidayDates);
+    const studentMap = new Map<string, any>();
+    (Array.isArray(students) ? students : []).forEach((s: any) => {
+      studentMap.set(String(s.id), s);
+    });
 
-        return {
-          key: String(index + 1),
-          studentId: row.studentId,
-          admissionNo: row.admissionNo || "—",
-          rollNo: row.rollNo || "—",
-          name: row.name || "—",
-          img: row.img || "",
-          gender: row.gender || "",
-          attendance: label,
-          badgeClass,
-        };
-      })
-      .filter(Boolean);
-  }, [appliedDate, reportData.rows]);
+    return gridRows.map((row, index) => {
+      const student = studentMap.get(String(row.studentId)) || {};
+      const status = row.daily?.[dayKey] || "absent";
+      const label = formatAttendanceDayHumanLabel(status);
+      let badgeClass = "badge-soft-secondary";
+      if (isHolidayAttendanceCompound(status)) {
+        badgeClass = "badge-soft-info";
+      } else if (status === "present") {
+        badgeClass = "badge-soft-success";
+      } else if (status === "late") {
+        badgeClass = "badge-soft-warning";
+      } else if (status === "absent") {
+        badgeClass = "badge-soft-danger";
+      } else if (status === "half_day" || status === "halfday") {
+        badgeClass = "badge-soft-primary";
+      } else if (status === "holiday") {
+        badgeClass = "badge-soft-info";
+      }
+
+      return {
+        key: String(row.studentId ?? index + 1),
+        studentId: row.studentId,
+        admissionNo: student.admission_number || row.rollNo || "—",
+        rollNo: student.roll_number || row.rollNo || "—",
+        name: row.name || "—",
+        img: student.photo_url || student.avatar || "",
+        gender: student.gender || "",
+        attendance: label,
+        badgeClass,
+      };
+    });
+  }, [appliedDate, reportData, students]);
 
   const exportColumns = useMemo(
     () => [

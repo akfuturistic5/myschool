@@ -28,10 +28,9 @@ test('attendance upsert schema rejects invalid status', () => {
 });
 
 test('attendance upsert schema rejects future date', () => {
-  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const payload = {
     entityType: 'staff',
-    attendanceDate: tomorrow,
+    attendanceDate: '2099-12-31',
     records: [{ entityId: 1, status: 'present' }],
   };
   const { error } = upsertAttendanceSchema.validate(payload);
