@@ -22,7 +22,7 @@ const { getSchoolIdFromRequest } = require('../utils/schoolContext');
 const { loadActiveGradeScale, getGradeFromScale } = require('../utils/gradeScaleService');
 const { hasColumn, hasTable } = require('../utils/schemaInspector');
 const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
-const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
+const { lateralCurrentEnrollment, buildEnrollmentJoin } = require('../utils/studentEnrollmentSql');
 const {
   enrichStudentHostel,
   enrichStudentTransport,
@@ -4627,6 +4627,138 @@ const buildTeacherEnrollmentScopeSql = ({ staffIdsParamRef }) => `(
   )
 )`;
 
+const appendGradeReportScheduleScopeSql = (params, { classId, sectionId, academicYearId }) => {
+  const parts = [];
+  if (classId) {
+    let classIdx = params.findIndex((p) => Number(p) === Number(classId));
+    if (classIdx < 0) {
+      params.push(classId);
+      classIdx = params.length - 1;
+    }
+    parts.push(`es.class_id = $${classIdx + 1}`);
+  } else {
+    parts.push('es.class_id = enr.class_id');
+    parts.push(`(
+      es.class_section_id IS NULL
+      OR EXISTS (
+        SELECT 1 FROM class_sections cs_m
+        WHERE cs_m.id = es.class_section_id
+          AND cs_m.section_id = enr.section_id
+          AND cs_m.class_id = enr.class_id
+          AND cs_m.deleted_at IS NULL
+      )
+    )`);
+  }
+
+  if (academicYearId) {
+    let ayIdx = params.findIndex((p) => Number(p) === Number(academicYearId));
+    if (ayIdx < 0) {
+      params.push(academicYearId);
+      ayIdx = params.length - 1;
+    }
+    parts.push(`es.academic_year_id = $${ayIdx + 1}`);
+  }
+
+  if (sectionId) {
+    let secIdx = params.findIndex((p) => Number(p) === Number(sectionId));
+    if (secIdx < 0) {
+      params.push(sectionId);
+      secIdx = params.length - 1;
+    }
+    parts.push(`(
+      es.class_section_id IS NULL
+      OR EXISTS (
+        SELECT 1 FROM class_sections cs_f
+        WHERE cs_f.id = es.class_section_id
+          AND cs_f.section_id = $${secIdx + 1}
+          AND cs_f.deleted_at IS NULL
+      )
+    )`);
+  }
+
+  return parts.join(' AND ');
+};
+
+const buildGradeReportGradeSql = (erCols) => {
+  if (erCols.has('grade_id')) {
+    return {
+      select: 'eg.grade_name AS grade',
+      join: 'LEFT JOIN exam_grades eg ON eg.id = er.grade_id',
+    };
+  }
+  if (erCols.has('grade')) {
+    return { select: 'er.grade AS grade', join: '' };
+  }
+  return { select: 'NULL::text AS grade', join: '' };
+};
+
+const buildGradeReportLegacyErSelect = (erCols, marksExpr, absentExpr) => {
+  const { select: gradeSelect, join: gradeJoin } = buildGradeReportGradeSql(erCols);
+  const maxCandidates = ['max_marks', 'max_mark', 'total_marks', 'full_marks', 'total'].filter((c) =>
+    erCols.has(c)
+  );
+  const minCandidates = ['min_marks', 'pass_marks', 'min_mark', 'min'].filter((c) => erCols.has(c));
+  const resultCandidates = ['result', 'result_status', 'status'].filter((c) => erCols.has(c));
+  const maxExpr =
+    maxCandidates.length > 0 ? `COALESCE(${maxCandidates.map((c) => `er.${c}`).join(', ')}, NULL)` : 'NULL';
+  const minExpr =
+    minCandidates.length > 0 ? `COALESCE(${minCandidates.map((c) => `er.${c}`).join(', ')}, NULL)` : 'NULL';
+  const resultExpr =
+    resultCandidates.length > 0
+      ? `COALESCE(${resultCandidates.map((c) => `er.${c}`).join(', ')}, NULL)`
+      : 'NULL';
+
+  const fields = [
+    's.id AS student_id',
+    erCols.has('subject_id') ? 'er.subject_id' : 'NULL::integer AS subject_id',
+    'sub.subject_name',
+    `${marksExpr} AS marks_obtained`,
+    `${maxExpr} AS max_marks`,
+    `${minExpr} AS min_marks`,
+    `${resultExpr} AS result`,
+    `${absentExpr} AS is_absent`,
+    gradeSelect,
+  ];
+
+  return { fields: fields.join(',\n           '), gradeJoin };
+};
+
+const mapGradeReportRowToSubjectMark = (row, erCols) => {
+  const rawMax =
+    row.max_marks ??
+    row.max_mark ??
+    row.total_marks ??
+    row.full_marks ??
+    row.total ??
+    null;
+  const rawMin = row.min_marks ?? row.pass_marks ?? row.min_mark ?? row.min ?? null;
+  const obtainedCandidates = ['marks_obtained', 'obtained_marks', 'marks', 'marks_scored', 'score'].filter((c) =>
+    erCols.has(c)
+  );
+  const rawObtained =
+    obtainedCandidates.length > 0
+      ? row.marks_obtained ?? row.obtained_marks ?? row.marks ?? row.marks_scored ?? row.score ?? null
+      : row.marks_obtained ?? null;
+
+  const maxMarks = rawMax != null ? Number(rawMax) : null;
+  const minMarks = rawMin != null ? Number(rawMin) : null;
+  const marksObtained = row.is_absent === true ? 0 : rawObtained != null ? Number(rawObtained) : null;
+  let result = row.result || row.result_status || row.status || null;
+  if (!result && maxMarks != null && marksObtained != null) {
+    const threshold = minMarks != null && minMarks > 0 ? minMarks : Math.round(maxMarks * 0.35);
+    result = marksObtained >= threshold ? 'Pass' : 'Fail';
+  }
+
+  return {
+    marksObtained,
+    maxMarks,
+    minMarks,
+    result,
+    grade: row.grade || null,
+    isAbsent: row.is_absent === true,
+  };
+};
+
 const getGradeReport = async (req, res) => {
   try {
     const classId = parseId(req.query.class_id);
@@ -4634,8 +4766,8 @@ const getGradeReport = async (req, res) => {
     const academicYearId = parseId(req.query.academic_year_id);
     const requestedExamId = parseId(req.query.exam_id);
 
-    if (!classId) {
-      return res.status(400).json({ status: 'ERROR', message: 'class_id is required' });
+    if (!academicYearId) {
+      return res.status(400).json({ status: 'ERROR', message: 'academic_year_id is required' });
     }
 
     const roleId = Number(req.user?.role_id);
@@ -4643,7 +4775,6 @@ const getGradeReport = async (req, res) => {
     const isTeacher = roleId === ROLES.TEACHER || roleName === 'teacher';
 
     let teacherStaffIds = [];
-    let teacherIds = [];
     if (isTeacher) {
       const teacherRes = await query(
         `SELECT st.id
@@ -4656,8 +4787,7 @@ const getGradeReport = async (req, res) => {
       if (!teacherStaffIds.length) {
         return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
       }
-      teacherIds = teacherStaffIds; // staff.id maps to legacy teacher_id
-    } else {
+    } else if (classId) {
       const access = await canAccessClass(req, classId);
       if (!access.ok) {
         return res.status(access.status || 403).json({
@@ -4667,71 +4797,50 @@ const getGradeReport = async (req, res) => {
       }
     }
 
-    const scopedStudentsWhere = ['enr.class_id = $1'];
-    const scopedStudentsParams = [classId];
+    const scopedStudentsParams = [];
+    const scopedStudentsWhere = [
+      `COALESCE(s.status, 'Active') = 'Active'`,
+      `s.deleted_at IS NULL`,
+      `enr.class_id IS NOT NULL`,
+    ];
+
+    if (classId) {
+      scopedStudentsParams.push(classId);
+      scopedStudentsWhere.push(`enr.class_id = $${scopedStudentsParams.length}`);
+    }
 
     if (sectionId) {
       scopedStudentsParams.push(sectionId);
       scopedStudentsWhere.push(`enr.section_id = $${scopedStudentsParams.length}`);
     }
-    if (academicYearId) {
-      scopedStudentsParams.push(academicYearId);
-      scopedStudentsWhere.push(`enr.academic_year_id = $${scopedStudentsParams.length}`);
-    }
     if (isTeacher) {
       scopedStudentsParams.push(teacherStaffIds);
       const staffIdsParamRef = `$${scopedStudentsParams.length}`;
-      scopedStudentsWhere.push(`(
-        ${buildTeacherEnrollmentScopeSql({ staffIdsParamRef })}
-      )`);
+      scopedStudentsWhere.push(`(${buildTeacherEnrollmentScopeSql({ staffIdsParamRef })})`);
     }
 
+    const enrollmentJoin = buildEnrollmentJoin('s.id', scopedStudentsParams, academicYearId);
     const scopedWhereSql = scopedStudentsWhere.join(' AND ');
 
-    const examsRes = await query(
-      `WITH scoped_students AS (
-         SELECT s.id
-         FROM students s
-         ${lateralCurrentEnrollment('s.id')}
-         WHERE ${scopedWhereSql}
-       )
-       SELECT DISTINCT
-         er.exam_id AS exam_id,
-         COALESCE(e.exam_name, 'Exam') AS exam_name,
-         COALESCE(e.exam_type, '') AS exam_type,
-         COALESCE(e.start_date, e.end_date, e.updated_at, e.created_at) AS exam_date
-       FROM exam_results er
-       INNER JOIN scoped_students ss ON ss.id = er.student_id
-       LEFT JOIN exams e ON er.exam_id = e.id
-       WHERE er.exam_id IS NOT NULL
-       ORDER BY COALESCE(e.start_date, e.end_date, e.updated_at, e.created_at) DESC NULLS LAST, COALESCE(e.exam_name, 'Exam') ASC`,
-      scopedStudentsParams
+    const uRoleId = req.user?.role_id || req.user?.user_role_id;
+    const isStaffViewer = [ROLES.ADMIN, ROLES.TEACHER, ROLES.ADMINISTRATIVE].includes(Number(uRoleId));
+    const publishFilter = isStaffViewer ? '' : 'AND e.is_published = true';
+
+    const { examResultsCols, hasExamSchedulesTable } = await loadExamSchemaCapabilities();
+    const erCols = new Set((examResultsCols || []).map((c) => String(c)));
+    const useExamScheduleLink = erCols.has('exam_schedule_id') && hasExamSchedulesTable;
+
+    const obtainedCandidates = ['marks_obtained', 'obtained_marks', 'marks', 'marks_scored', 'score'].filter((c) =>
+      erCols.has(c)
     );
+    const marksExpr =
+      obtainedCandidates.length > 0
+        ? `COALESCE(${obtainedCandidates.map((c) => `er.${c}`).join(', ')}, NULL)`
+        : 'NULL';
+    const absentExpr = erCols.has('is_absent') ? 'COALESCE(er.is_absent, false)' : 'false';
+    const { select: gradeSelectSql, join: gradeJoinSql } = buildGradeReportGradeSql(erCols);
 
-    const availableExams = examsRes.rows.map((row) => ({
-      examId: row.exam_id,
-      examName: row.exam_name,
-      examType: row.exam_type,
-      examDate: row.exam_date,
-    }));
-
-    const selectedExam = availableExams.find((exam) => Number(exam.examId) === Number(requestedExamId)) || availableExams[0] || null;
-
-    if (!selectedExam) {
-      return res.status(200).json({
-        status: 'SUCCESS',
-        message: 'Grade report fetched successfully',
-        data: {
-          selectedExam: null,
-          availableExams: [],
-          subjects: [],
-          rows: [],
-        },
-      });
-    }
-
-    const reportParams = [...scopedStudentsParams, selectedExam.examId];
-    const reportRes = await query(
+    const studentsRes = await query(
       `SELECT
          s.id AS student_id,
          s.admission_number,
@@ -4740,98 +4849,246 @@ const getGradeReport = async (req, res) => {
          u.last_name,
          u.avatar AS photo_url,
          u.gender,
+         enr.class_id,
+         c.class_name,
          enr.section_id,
-         sec.section_name,
-         er.id AS exam_result_id,
-         er.exam_id,
-         er.subject_id,
-         er.marks_obtained,
-         er.obtained_marks,
-         er.marks,
-         er.marks_scored,
-         er.score,
-         er.max_marks,
-         er.max_mark,
-         er.total_marks,
-         er.full_marks,
-         er.total,
-         er.min_marks,
-         er.pass_marks,
-         er.min_mark,
-         er.min,
-         er.result,
-         er.result_status,
-         er.status,
-         er.grade,
-         er.is_absent,
-         sub.subject_name
+         sec.section_name
        FROM students s
        LEFT JOIN users u ON s.user_id = u.id
-       ${lateralCurrentEnrollment('s.id')}
+       ${enrollmentJoin}
+       LEFT JOIN classes c ON c.id = enr.class_id
        LEFT JOIN sections sec ON enr.section_id = sec.id
-       LEFT JOIN exam_results er ON er.student_id = s.id AND er.exam_id = $${reportParams.length}
-       LEFT JOIN subjects sub ON er.subject_id = sub.id
        WHERE ${scopedWhereSql}
-       ORDER BY u.first_name ASC, u.last_name ASC, sub.subject_name ASC NULLS LAST`,
-      reportParams
+       ORDER BY c.class_name ASC NULLS LAST, sec.section_name ASC NULLS LAST, u.first_name ASC, u.last_name ASC`,
+      scopedStudentsParams
     );
 
-    const subjectMap = new Map();
     const studentsMap = new Map();
+    (studentsRes.rows || []).forEach((row) => {
+      studentsMap.set(String(row.student_id), {
+        studentId: row.student_id,
+        admissionNo: row.admission_number || '',
+        rollNo: row.roll_number || '',
+        studentName: [row.first_name, row.last_name].filter(Boolean).join(' ') || 'Student',
+        avatar: row.photo_url || '',
+        gender: row.gender || '',
+        classId: row.class_id,
+        className: row.class_name || '',
+        sectionId: row.section_id,
+        sectionName: row.section_name || '',
+        subjectMarks: {},
+      });
+    });
 
-    reportRes.rows.forEach((row) => {
-      if (row.subject_id != null && !subjectMap.has(String(row.subject_id))) {
+    let availableExams = [];
+
+    if (useExamScheduleLink) {
+      let examListParams = [];
+      let scheduleFilterSql = 'TRUE';
+      if (classId) {
+        examListParams = [];
+        scheduleFilterSql = appendGradeReportScheduleScopeSql(examListParams, {
+          classId,
+          sectionId,
+          academicYearId,
+        });
+      } else {
+        const examScopeParts = [];
+        if (academicYearId) {
+          examListParams.push(academicYearId);
+          examScopeParts.push(`es.academic_year_id = $${examListParams.length}`);
+        }
+        scheduleFilterSql = examScopeParts.length > 0 ? examScopeParts.join(' AND ') : 'TRUE';
+      }
+      const examsRes = await query(
+        `SELECT
+           es.exam_id AS exam_id,
+           COALESCE(e.exam_name, 'Exam') AS exam_name,
+           COALESCE(e.exam_type::text, '') AS exam_type,
+           MAX(COALESCE(es.exam_date, e.updated_at, e.created_at)) AS exam_date
+         FROM exam_schedules es
+         INNER JOIN exams e ON e.id = es.exam_id
+         WHERE ${scheduleFilterSql}
+           ${publishFilter}
+         GROUP BY es.exam_id, e.exam_name, e.exam_type
+         ORDER BY MAX(COALESCE(es.exam_date, e.updated_at, e.created_at)) DESC NULLS LAST,
+                  COALESCE(e.exam_name, 'Exam') ASC`,
+        examListParams
+      );
+      availableExams = (examsRes.rows || []).map((row) => ({
+        examId: row.exam_id,
+        examName: row.exam_name,
+        examType: row.exam_type,
+        examDate: row.exam_date,
+      }));
+    } else if (erCols.has('exam_id')) {
+      const examsRes = await query(
+        `WITH scoped_students AS (
+           SELECT s.id
+           FROM students s
+           ${enrollmentJoin}
+           WHERE ${scopedWhereSql}
+         )
+         SELECT DISTINCT
+           er.exam_id AS exam_id,
+           COALESCE(e.exam_name, 'Exam') AS exam_name,
+           COALESCE(e.exam_type::text, '') AS exam_type,
+           COALESCE(e.start_date, e.end_date, e.updated_at, e.created_at) AS exam_date
+         FROM exam_results er
+         INNER JOIN scoped_students ss ON ss.id = er.student_id
+         LEFT JOIN exams e ON er.exam_id = e.id
+         WHERE er.exam_id IS NOT NULL
+           ${publishFilter}
+         ORDER BY COALESCE(e.start_date, e.end_date, e.updated_at, e.created_at) DESC NULLS LAST,
+                  COALESCE(e.exam_name, 'Exam') ASC`,
+        scopedStudentsParams
+      );
+      availableExams = (examsRes.rows || []).map((row) => ({
+        examId: row.exam_id,
+        examName: row.exam_name,
+        examType: row.exam_type,
+        examDate: row.exam_date,
+      }));
+    }
+
+    const selectedExam =
+      availableExams.find((exam) => Number(exam.examId) === Number(requestedExamId)) || availableExams[0] || null;
+
+    const subjectMap = new Map();
+
+    if (selectedExam && useExamScheduleLink) {
+      const marksParams = [...scopedStudentsParams];
+      const scheduleFilterSql = appendGradeReportScheduleScopeSql(marksParams, {
+        classId,
+        sectionId,
+        academicYearId,
+      });
+      marksParams.push(selectedExam.examId);
+
+      let subjectListParams = marksParams;
+      let subjectScheduleSql = `${scheduleFilterSql} AND es.exam_id = $${marksParams.length}`;
+      if (!classId) {
+        subjectListParams = [];
+        const subjectParts = [];
+        if (academicYearId) {
+          subjectListParams.push(academicYearId);
+          subjectParts.push(`es.academic_year_id = $${subjectListParams.length}`);
+        }
+        subjectListParams.push(selectedExam.examId);
+        subjectParts.push(`es.exam_id = $${subjectListParams.length}`);
+        subjectScheduleSql = subjectParts.join(' AND ');
+      }
+
+      const subjectsRes = await query(
+        `SELECT DISTINCT
+           sub.id AS subject_id,
+           sub.subject_name
+         FROM exam_schedules es
+         INNER JOIN class_subjects cs ON cs.id = es.class_subject_id
+         INNER JOIN subjects sub ON sub.id = cs.subject_id
+         WHERE ${subjectScheduleSql}
+         ORDER BY sub.subject_name ASC`,
+        subjectListParams
+      );
+      (subjectsRes.rows || []).forEach((row) => {
+        if (row.subject_id == null) return;
         subjectMap.set(String(row.subject_id), {
           subjectId: row.subject_id,
           subjectName: row.subject_name || `Subject ${row.subject_id}`,
         });
-      }
+      });
 
-      const studentKey = String(row.student_id);
-      if (!studentsMap.has(studentKey)) {
-        studentsMap.set(studentKey, {
-          studentId: row.student_id,
-          admissionNo: row.admission_number || '',
-          rollNo: row.roll_number || '',
-          studentName: [row.first_name, row.last_name].filter(Boolean).join(' ') || 'Student',
-          avatar: row.photo_url || '',
-          gender: row.gender || '',
-          sectionId: row.section_id,
-          sectionName: row.section_name || '',
-          subjectMarks: {},
-        });
-      }
+      const marksRes = await query(
+        `SELECT
+           s.id AS student_id,
+           sub.id AS subject_id,
+           sub.subject_name,
+           ${marksExpr} AS marks_obtained,
+           COALESCE(es.max_marks, 100) AS max_marks,
+           COALESCE(es.passing_marks, 35) AS passing_marks,
+           ${absentExpr} AS is_absent,
+           ${gradeSelectSql}
+         FROM students s
+         ${enrollmentJoin}
+         INNER JOIN exam_schedules es
+           ON ${scheduleFilterSql}
+          AND es.exam_id = $${marksParams.length}
+         INNER JOIN class_subjects cs ON cs.id = es.class_subject_id
+         INNER JOIN subjects sub ON sub.id = cs.subject_id
+         LEFT JOIN exam_results er
+           ON er.exam_schedule_id = es.id
+          AND er.student_id = s.id
+         ${gradeJoinSql}
+         WHERE ${scopedWhereSql}
+           AND (
+             COALESCE(cs.is_elective, false) = false
+             OR EXISTS (
+               SELECT 1 FROM student_subject_choices ssc
+               WHERE ssc.student_id = s.id
+                 AND ssc.class_subject_id = cs.id
+                 AND ssc.deleted_at IS NULL
+             )
+           )
+         ORDER BY sub.subject_name ASC`,
+        marksParams
+      );
 
-      if (row.subject_id == null) return;
+      (marksRes.rows || []).forEach((row) => {
+        if (row.subject_id != null && !subjectMap.has(String(row.subject_id))) {
+          subjectMap.set(String(row.subject_id), {
+            subjectId: row.subject_id,
+            subjectName: row.subject_name || `Subject ${row.subject_id}`,
+          });
+        }
+        const studentKey = String(row.student_id);
+        if (!studentsMap.has(studentKey)) return;
+        if (row.subject_id == null) return;
+        const student = studentsMap.get(studentKey);
+        student.subjectMarks[String(row.subject_id)] = mapGradeReportRowToSubjectMark(
+          {
+            ...row,
+            min_marks: row.passing_marks,
+          },
+          erCols
+        );
+      });
+    } else if (selectedExam && erCols.has('exam_id')) {
+      const reportParams = [...scopedStudentsParams, selectedExam.examId];
+      const legacyEr = buildGradeReportLegacyErSelect(erCols, marksExpr, absentExpr);
+      const reportRes = await query(
+        `SELECT
+           ${legacyEr.fields}
+         FROM students s
+         ${enrollmentJoin}
+         LEFT JOIN exam_results er ON er.student_id = s.id AND er.exam_id = $${reportParams.length}
+         LEFT JOIN subjects sub ON er.subject_id = sub.id
+         ${legacyEr.gradeJoin}
+         WHERE ${scopedWhereSql}
+         ORDER BY sub.subject_name ASC NULLS LAST`,
+        reportParams
+      );
 
-      const student = studentsMap.get(studentKey);
-      const rawMax = row.max_marks ?? row.max_mark ?? row.total_marks ?? row.full_marks ?? row.total ?? null;
-      const rawMin = row.min_marks ?? row.pass_marks ?? row.min_mark ?? row.min ?? null;
-      const rawObtained = row.marks_obtained ?? row.obtained_marks ?? row.marks ?? row.marks_scored ?? row.score ?? null;
-
-      const maxMarks = rawMax != null ? Number(rawMax) : null;
-      const minMarks = rawMin != null ? Number(rawMin) : null;
-      const marksObtained = row.is_absent === true ? 0 : (rawObtained != null ? Number(rawObtained) : null);
-      let result = row.result || row.result_status || row.status || null;
-      if (!result && maxMarks != null && marksObtained != null) {
-        const threshold = minMarks != null && minMarks > 0 ? minMarks : Math.round(maxMarks * 0.35);
-        result = marksObtained >= threshold ? 'Pass' : 'Fail';
-      }
-
-      student.subjectMarks[String(row.subject_id)] = {
-        marksObtained,
-        maxMarks,
-        minMarks,
-        result,
-        grade: row.grade || null,
-        isAbsent: row.is_absent === true,
-      };
-    });
+      (reportRes.rows || []).forEach((row) => {
+        if (row.subject_id != null && !subjectMap.has(String(row.subject_id))) {
+          subjectMap.set(String(row.subject_id), {
+            subjectId: row.subject_id,
+            subjectName: row.subject_name || `Subject ${row.subject_id}`,
+          });
+        }
+        const studentKey = String(row.student_id);
+        if (!studentsMap.has(studentKey)) return;
+        if (row.subject_id == null) return;
+        const student = studentsMap.get(studentKey);
+        student.subjectMarks[String(row.subject_id)] = mapGradeReportRowToSubjectMark(row, erCols);
+      });
+    }
 
     const gradeScale = await loadActiveGradeScale();
     const subjects = Array.from(subjectMap.values());
     const rows = Array.from(studentsMap.values()).map((student) => {
-      const subjectEntries = subjects.map((subject) => student.subjectMarks[String(subject.subjectId)]).filter(Boolean);
+      const subjectEntries = subjects
+        .map((subject) => student.subjectMarks[String(subject.subjectId)])
+        .filter(Boolean);
       const totalObtained = subjectEntries.reduce((sum, entry) => sum + (Number(entry.marksObtained) || 0), 0);
       const totalMax = subjectEntries.reduce((sum, entry) => sum + (Number(entry.maxMarks) || 0), 0);
       const totalMin = subjectEntries.reduce((sum, entry) => sum + (Number(entry.minMarks) || 0), 0);
@@ -4851,7 +5108,7 @@ const getGradeReport = async (req, res) => {
       };
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       status: 'SUCCESS',
       message: 'Grade report fetched successfully',
       data: {
@@ -4863,9 +5120,9 @@ const getGradeReport = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching grade report:', error);
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Grade report not available',
+    return res.status(500).json({
+      status: 'ERROR',
+      message: error.message || 'Failed to fetch grade report',
       data: {
         selectedExam: null,
         availableExams: [],

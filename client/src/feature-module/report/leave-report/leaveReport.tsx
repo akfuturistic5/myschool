@@ -35,6 +35,25 @@ const leaveBucketFromName = (name: unknown) => {
   return null;
 };
 
+/** Rejected/declined leaves must not reduce available balance or total days taken. */
+const isRejectedLeave = (leave: any) => {
+  const status = String(leave?.status || "")
+    .trim()
+    .toLowerCase();
+  if (!status) return false;
+  if (status === "rejected") return true;
+  if (["decline", "declined", "deny", "denied"].includes(status)) return true;
+  return status.includes("reject") && !status.includes("approv");
+};
+
+const sumCountableLeaveDays = (leaves: any[]) =>
+  (Array.isArray(leaves) ? leaves : [])
+    .filter((leave) => !isRejectedLeave(leave))
+    .reduce((sum: number, leave: any) => {
+      const days = Number(leave?.noOfDays || 0);
+      return sum + (Number.isFinite(days) && days > 0 ? days : 0);
+    }, 0);
+
 const emptyLeaveFields = () => ({
   leaveType: "—",
   leaveDate: "—",
@@ -186,6 +205,7 @@ const LeaveReport = () => {
     leavesByStaffId.forEach((leaves, staffId) => {
       const staffKey = String(staffId);
       leaves.forEach((row: any) => {
+        if (isRejectedLeave(row)) return;
         const bucket = leaveBucketFromName(row.leaveType);
         if (!bucket) return;
         const days = Number(row.noOfDays || 0);
@@ -201,8 +221,7 @@ const LeaveReport = () => {
       });
     });
 
-    const mapLeaveToRow = (staff: any, leave: any, index: number) => {
-      const dateRaw = leave?.startDate || "";
+    const mapStaffToRow = (staff: any, leaves: any[]) => {
       const staffKey = String(staff.staffId);
       const usage = usageByStaff.get(staffKey) || {
         medical: 0,
@@ -211,20 +230,14 @@ const LeaveReport = () => {
         paternity: 0,
         special: 0,
       };
-      const empty = emptyLeaveFields();
+      const totalLeaveDays = sumCountableLeaveDays(leaves);
       return {
-        key: leave?.key || `teacher-leave-report-${staff.staffId}-${index}`,
+        key: `staff-leave-report-${staff.staffId}`,
         staffId: staff.staffId,
         name: staff.name,
         role: staff.role,
-        leaveType: leave?.leaveType || empty.leaveType,
-        leaveDate: leave?.leaveDate || empty.leaveDate,
-        noOfDays: Number(leave?.noOfDays || 0),
-        applyOn: leave?.applyOn || empty.applyOn,
-        status: leave?.status || empty.status,
-        description: leave?.description || empty.description,
-        avatar: leave?.photoUrl || staff.avatar || "",
-        leaveStartRaw: dateRaw ? new Date(dateRaw).toISOString().slice(0, 10) : "",
+        noOfDays: totalLeaveDays,
+        avatar: staff.avatar || leaves[0]?.photoUrl || "",
         medicalUsed: usage.medical,
         medicalAvailable: Math.max(teacherLeaveTypeMax.medical - usage.medical, 0),
         casualUsed: usage.casual,
@@ -235,36 +248,34 @@ const LeaveReport = () => {
         paternityAvailable: Math.max(teacherLeaveTypeMax.paternity - usage.paternity, 0),
         specialUsed: usage.special,
         specialAvailable: Math.max(teacherLeaveTypeMax.special - usage.special, 0),
-        hasLeave: Boolean(leave),
+        hasLeave: leaves.some((leave) => !isRejectedLeave(leave)),
       };
     };
 
     if (staffRoster.length > 0) {
-      const rows: any[] = [];
-      staffRoster.forEach((staff: any) => {
+      return staffRoster.map((staff: any) => {
         const leaves = leavesByStaffId.get(Number(staff.staffId)) || [];
-        if (leaves.length === 0) {
-          rows.push(mapLeaveToRow(staff, null, 0));
-        } else {
-          leaves.forEach((leave: any, idx: number) => rows.push(mapLeaveToRow(staff, leave, idx)));
-        }
+        return mapStaffToRow(staff, leaves);
       });
-      return rows;
     }
 
-    return (Array.isArray(staffLeaveApplications) ? staffLeaveApplications : []).map(
-      (row: any, index: number) =>
-        mapLeaveToRow(
-          {
-            staffId: row.staffId,
-            name: row.name || "—",
-            role: row.role || "Teacher",
-            avatar: row.photoUrl || "",
-          },
-          row,
-          index
-        )
-    );
+    const staffFromLeaves = new Map<number, any>();
+    (Array.isArray(staffLeaveApplications) ? staffLeaveApplications : []).forEach((row: any) => {
+      const id = Number(row.staffId);
+      if (!Number.isFinite(id)) return;
+      if (!staffFromLeaves.has(id)) {
+        staffFromLeaves.set(id, {
+          staffId: id,
+          name: row.name || "—",
+          role: row.role || "Staff",
+          avatar: row.photoUrl || "",
+        });
+      }
+    });
+    return Array.from(staffFromLeaves.values()).map((staff) => {
+      const leaves = leavesByStaffId.get(Number(staff.staffId)) || [];
+      return mapStaffToRow(staff, leaves);
+    });
   }, [staffRoster, leavesByStaffId, staffLeaveApplications, teacherLeaveTypeMax]);
 
   const teacherRoleOptions = useMemo(() => {
@@ -281,42 +292,68 @@ const LeaveReport = () => {
   const teacherStatusOptions = useMemo(() => {
     const unique = Array.from(
       new Set(
-        teacherLeaveRows
+        staffLeaveApplications
           .map((row: any) => String(row.status || "").trim().toLowerCase())
           .filter(Boolean)
       )
     ).sort((a, b) => a.localeCompare(b));
     return [{ value: "All", label: "All Status" }, ...unique.map((value) => ({ value, label: value }))];
-  }, [teacherLeaveRows]);
+  }, [staffLeaveApplications]);
 
   const teacherLeaveTypeOptions = useMemo(() => {
     const unique = Array.from(
       new Set(
-        teacherLeaveRows
+        staffLeaveApplications
           .map((row: any) => String(row.leaveType || "").trim())
-          .filter((value: string) => value && value !== "—")
+          .filter((value: string) => value && value !== "—" && value !== "N/A")
       )
     ).sort((a, b) => a.localeCompare(b));
     return [{ value: "All", label: "All Leave Types" }, ...unique.map((value) => ({ value, label: value }))];
-  }, [teacherLeaveRows]);
+  }, [staffLeaveApplications]);
 
   const filteredTeacherRows = useMemo(() => {
     return teacherLeaveRows.filter((row: any) => {
       const roleOk = appliedTeacherRole === "All" || row.role === appliedTeacherRole;
+      const leaves = leavesByStaffId.get(Number(row.staffId)) || [];
+      if (leaves.length === 0) {
+        return (
+          roleOk &&
+          appliedTeacherStatus === "All" &&
+          appliedTeacherLeaveType === "All" &&
+          !selectedDateRange
+        );
+      }
       const statusOk =
         appliedTeacherStatus === "All" ||
-        (row.status !== "—" && String(row.status).toLowerCase() === appliedTeacherStatus);
+        leaves.some((leave: any) => String(leave.status || "").toLowerCase() === appliedTeacherStatus);
       const leaveTypeOk =
         appliedTeacherLeaveType === "All" ||
-        (row.leaveType !== "—" && row.leaveType === appliedTeacherLeaveType);
+        leaves.some(
+          (leave: any) =>
+            String(leave.leaveType || "").trim() !== "—" &&
+            String(leave.leaveType || "").trim() === appliedTeacherLeaveType
+        );
       const dateOk =
         !selectedDateRange ||
-        (row.leaveStartRaw &&
-          row.leaveStartRaw >= selectedDateRange[0].format("YYYY-MM-DD") &&
-          row.leaveStartRaw <= selectedDateRange[1].format("YYYY-MM-DD"));
+        leaves.some((leave: any) => {
+          const dateRaw = leave?.startDate || "";
+          const leaveStartRaw = dateRaw ? new Date(dateRaw).toISOString().slice(0, 10) : "";
+          return (
+            leaveStartRaw &&
+            leaveStartRaw >= selectedDateRange[0].format("YYYY-MM-DD") &&
+            leaveStartRaw <= selectedDateRange[1].format("YYYY-MM-DD")
+          );
+        });
       return roleOk && statusOk && leaveTypeOk && dateOk;
     });
-  }, [appliedTeacherRole, appliedTeacherStatus, appliedTeacherLeaveType, selectedDateRange, teacherLeaveRows]);
+  }, [
+    appliedTeacherRole,
+    appliedTeacherStatus,
+    appliedTeacherLeaveType,
+    selectedDateRange,
+    teacherLeaveRows,
+    leavesByStaffId,
+  ]);
 
   const leavesByStudentId = useMemo(
     () => groupLeavesById(studentLeaveApplications, "studentId"),
@@ -351,7 +388,7 @@ const LeaveReport = () => {
         leaveType: leave?.leaveType || empty.leaveType,
         noOfDays: Number(leave?.noOfDays || 0),
         leaveDate: leave?.leaveDate || empty.leaveDate,
-        applyOn: leave?.applyOn || empty.applyOn,
+        applyOn: leave?.appliedOn || leave?.applyOn || empty.applyOn,
         status: leave?.status || empty.status,
         description: leave?.description || empty.description,
         avatar: leave?.photoUrl || student?.photo_url || student?.avatar || "",
@@ -555,52 +592,10 @@ const LeaveReport = () => {
       ],
     },
     {
-      title: "Leave Type",
-      dataIndex: "leaveType",
-      key: "leaveType",
-      sorter: (a: TableData, b: TableData) => compareText(a?.leaveType, b?.leaveType),
-    },
-    {
-      title: "Leave Date",
-      dataIndex: "leaveDate",
-      key: "leaveDate",
-      sorter: (a: TableData, b: TableData) => compareText(a?.leaveDate, b?.leaveDate),
-    },
-    {
-      title: "Days",
+      title: "Total Leave Days",
       dataIndex: "noOfDays",
       key: "noOfDays",
       sorter: (a: TableData, b: TableData) => compareNumber(a?.noOfDays, b?.noOfDays),
-    },
-    {
-      title: "Applied On",
-      dataIndex: "applyOn",
-      key: "applyOn",
-      sorter: (a: TableData, b: TableData) => compareText((a as any)?.applyOn, (b as any)?.applyOn),
-    },
-    {
-      title: "Status",
-      dataIndex: "status",
-      key: "status",
-      sorter: (a: TableData, b: TableData) => compareText(a?.status, b?.status),
-      render: (status: string) => {
-        const value = String(status || "").toLowerCase();
-        const className =
-          value.includes("approv") ? "badge-soft-success" : value.includes("reject") ? "badge-soft-danger" : "badge-soft-warning";
-        return (
-          <span className={`badge d-inline-flex align-items-center ${className}`}>
-            <i className="ti ti-circle-filled fs-5 me-1" />
-            {status}
-          </span>
-        );
-      },
-    },
-    {
-      title: "Description",
-      dataIndex: "description",
-      key: "description",
-      sorter: (a: TableData, b: TableData) => compareText(a?.description, b?.description),
-      render: (text: string) => <span title={text || "—"}>{text || "—"}</span>,
     },
   ];
 
@@ -648,12 +643,6 @@ const LeaveReport = () => {
       sorter: (a: TableData, b: TableData) => compareText(a?.sectionName, b?.sectionName),
     },
     {
-      title: "Leave Type",
-      dataIndex: "leaveType",
-      key: "leaveType",
-      sorter: (a: TableData, b: TableData) => compareText(a?.leaveType, b?.leaveType),
-    },
-    {
       title: "Leave Date",
       dataIndex: "leaveDate",
       key: "leaveDate",
@@ -670,6 +659,10 @@ const LeaveReport = () => {
       dataIndex: "applyOn",
       key: "applyOn",
       sorter: (a: TableData, b: TableData) => compareText((a as any)?.applyOn, (b as any)?.applyOn),
+      render: (text: string) => {
+        const value = String(text || "").trim();
+        return value && value !== "—" && value !== "N/A" ? value : "—";
+      },
     },
     {
       title: "Status",
@@ -752,12 +745,7 @@ const LeaveReport = () => {
       { title: "Paternity Available", dataKey: "paternityAvailable" },
       { title: "Special Used", dataKey: "specialUsed" },
       { title: "Special Available", dataKey: "specialAvailable" },
-      { title: "Leave Type", dataKey: "leaveType" },
-      { title: "Leave Date", dataKey: "leaveDate" },
-      { title: "Days", dataKey: "noOfDays" },
-      { title: "Applied On", dataKey: "applyOn" },
-      { title: "Status", dataKey: "status" },
-      { title: "Description", dataKey: "description" },
+      { title: "Total Leave Days", dataKey: "noOfDays" },
     ],
     []
   );
@@ -769,7 +757,6 @@ const LeaveReport = () => {
       { title: "Roll No", dataKey: "rollNo" },
       { title: "Class", dataKey: "className" },
       { title: "Section", dataKey: "sectionName" },
-      { title: "Leave Type", dataKey: "leaveType" },
       { title: "Leave Date", dataKey: "leaveDate" },
       { title: "Days", dataKey: "noOfDays" },
       { title: "Applied On", dataKey: "applyOn" },
@@ -795,14 +782,9 @@ const LeaveReport = () => {
         "Paternity Available": row.paternityAvailable,
         "Special Used": row.specialUsed,
         "Special Available": row.specialAvailable,
-        "Leave Type": row.leaveType,
-        "Leave Date": row.leaveDate,
-        Days: row.noOfDays,
-        "Applied On": row.applyOn,
-        Status: row.status,
-        Description: row.description,
+        "Total Leave Days": row.noOfDays,
       }));
-      exportToExcel(rows, `TeacherLeaveReport_${dateStamp}`);
+      exportToExcel(rows, `StaffLeaveReport_${dateStamp}`);
       return;
     }
 
@@ -812,7 +794,6 @@ const LeaveReport = () => {
       "Roll No": row.rollNo,
       Class: row.className,
       Section: row.sectionName,
-      "Leave Type": row.leaveType,
       "Leave Date": row.leaveDate,
       Days: row.noOfDays,
       "Applied On": row.applyOn,
@@ -825,7 +806,7 @@ const LeaveReport = () => {
   const handleExportPDF = () => {
     const dateStamp = new Date().toISOString().split("T")[0];
     if (activeTab === "teacher") {
-      exportToPDF(filteredTeacherRows, "Teacher Leave Report", `TeacherLeaveReport_${dateStamp}`, teacherExportColumns);
+      exportToPDF(filteredTeacherRows, "Staff Leave Report", `StaffLeaveReport_${dateStamp}`, teacherExportColumns);
       return;
     }
     exportToPDF(filteredStudentRows, "Student Leave Report", `StudentLeaveReport_${dateStamp}`, studentExportColumns);
@@ -833,7 +814,7 @@ const LeaveReport = () => {
 
   const handlePrint = () => {
     if (activeTab === "teacher") {
-      printData("Teacher Leave Report", teacherExportColumns, filteredTeacherRows);
+      printData("Staff Leave Report", teacherExportColumns, filteredTeacherRows);
       return;
     }
     printData("Student Leave Report", studentExportColumns, filteredStudentRows);
@@ -897,7 +878,7 @@ const LeaveReport = () => {
                       className={`btn btn-sm ${activeTab === "teacher" ? "btn-primary" : "btn-outline-primary"}`}
                       onClick={() => setActiveTab("teacher")}
                     >
-                      Teacher Leave
+                      Staff Report
                     </button>
                   </li>
                 </ul>

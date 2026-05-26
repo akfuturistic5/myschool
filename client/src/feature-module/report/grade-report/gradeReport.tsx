@@ -18,6 +18,17 @@ const compareText = (left: unknown, right: unknown) =>
 const compareNumber = (left: unknown, right: unknown) =>
   Number(left ?? 0) - Number(right ?? 0);
 
+const formatTotalMarks = (summary: any) => {
+  const obtained = summary?.totalObtained;
+  const max = summary?.totalMax;
+  if (obtained == null && (max == null || max === 0)) return "—";
+  if (max == null || Number(max) === 0) {
+    return obtained != null ? String(obtained) : "—";
+  }
+  return `${obtained ?? 0}/${max}`;
+};
+
+const CLASS_ALL = "all";
 const SECTION_ALL = "all";
 const EXAM_LATEST = "latest";
 
@@ -27,7 +38,7 @@ const GradeReport = () => {
   const { classesWithSections, loading: classesLoading, error: classesError, refetch: refetchClasses } =
     useClassesWithSections(academicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [selectedClassId, setSelectedClassId] = useState<string>(CLASS_ALL);
   const [selectedSectionId, setSelectedSectionId] = useState<string>(SECTION_ALL);
   const [selectedExamId, setSelectedExamId] = useState<string>(EXAM_LATEST);
   const [reportData, setReportData] = useState<any>({ selectedExam: null, availableExams: [], subjects: [], rows: [] });
@@ -44,17 +55,27 @@ const GradeReport = () => {
         label: row.className || `Class ${row.classId}`,
       });
     });
-    return Array.from(seen.values());
+    return [{ value: CLASS_ALL, label: "All Classes" }, ...Array.from(seen.values())];
   }, [classesWithSections]);
 
   const sectionOptions = useMemo(() => {
     const base = [{ value: SECTION_ALL, label: "All Sections" }];
-    const items = (Array.isArray(classesWithSections) ? classesWithSections : [])
-      .filter((row: any) => String(row.classId) === String(selectedClassId || ""))
+    const pool =
+      selectedClassId === CLASS_ALL
+        ? Array.isArray(classesWithSections)
+          ? classesWithSections
+          : []
+        : (Array.isArray(classesWithSections) ? classesWithSections : []).filter(
+            (row: any) => String(row.classId) === String(selectedClassId)
+          );
+    const items = pool
       .filter((row: any) => row?.sectionId != null)
       .map((row: any) => ({
         value: String(row.sectionId),
-        label: row.sectionName || `Section ${row.sectionId}`,
+        label:
+          selectedClassId === CLASS_ALL
+            ? `${row.className || "Class"} — ${row.sectionName || `Section ${row.sectionId}`}`
+            : row.sectionName || `Section ${row.sectionId}`,
       }));
 
     const seen = new Set<string>();
@@ -79,12 +100,6 @@ const GradeReport = () => {
   );
 
   useEffect(() => {
-    if (!selectedClassId && classOptions.length > 0) {
-      setSelectedClassId(classOptions[0].value);
-    }
-  }, [classOptions, selectedClassId]);
-
-  useEffect(() => {
     if (selectedSectionId !== SECTION_ALL && !sectionOptions.some((option) => option.value === selectedSectionId)) {
       setSelectedSectionId(SECTION_ALL);
     }
@@ -97,14 +112,15 @@ const GradeReport = () => {
   }, [examOptions, selectedExamId]);
 
   useEffect(() => {
-    if (selectedClassId && !classOptions.some((o) => o.value === selectedClassId)) {
-      setSelectedClassId(classOptions[0]?.value ?? null);
+    if (!classOptions.some((o) => o.value === selectedClassId)) {
+      setSelectedClassId(CLASS_ALL);
     }
   }, [classOptions, selectedClassId]);
 
   useEffect(() => {
-    if (!selectedClassId) {
+    if (academicYearId == null) {
       setReportData({ selectedExam: null, availableExams: [], subjects: [], rows: [] });
+      setError("Select an academic year from the header to load the grade report.");
       setLoading(false);
       return;
     }
@@ -116,17 +132,25 @@ const GradeReport = () => {
         setLoading(true);
         setError(null);
         const res = await apiService.getGradeReport({
-          classId: selectedClassId,
+          classId: selectedClassId === CLASS_ALL ? null : selectedClassId,
           sectionId: selectedSectionId === SECTION_ALL ? null : selectedSectionId,
           academicYearId,
           examId: selectedExamId === EXAM_LATEST ? null : selectedExamId,
         });
+        const isSuccess =
+          res &&
+          (res.status === "SUCCESS" ||
+            res.success === true ||
+            (res.data != null && typeof res.data === "object"));
         const payload =
-          res && typeof res === "object" && res.data != null && !Array.isArray(res.data)
+          isSuccess && res?.data != null && typeof res.data === "object" && !Array.isArray(res.data)
             ? res.data
             : { selectedExam: null, availableExams: [], subjects: [], rows: [] };
         if (!cancelled) {
           setReportData(payload);
+          if (!isSuccess && res?.message) {
+            setError(String(res.message));
+          }
         }
       } catch (err: any) {
         if (!cancelled) {
@@ -155,26 +179,6 @@ const GradeReport = () => {
     [reportData.rows]
   );
 
-  const subjectColumns = useMemo(
-    () =>
-      (Array.isArray(reportData.subjects) ? reportData.subjects : []).map((subject: any) => ({
-        title: subject.subjectName || `Subject ${subject.subjectId}`,
-        key: `subject-${subject.subjectId}`,
-        render: (_text: any, record: any) => {
-          const marks = record.subjectMarks?.[String(subject.subjectId)];
-          if (!marks) return "—";
-          if (marks.isAbsent) return "AB";
-          return marks.marksObtained ?? "—";
-        },
-        sorter: (a: any, b: any) =>
-          compareNumber(
-            a?.subjectMarks?.[String(subject.subjectId)]?.marksObtained,
-            b?.subjectMarks?.[String(subject.subjectId)]?.marksObtained
-          ),
-      })),
-    [reportData.subjects]
-  );
-
   const columns = useMemo(
     () => [
       {
@@ -187,6 +191,20 @@ const GradeReport = () => {
             {text || "—"}
           </Link>
         ),
+      },
+      {
+        title: "Class",
+        dataIndex: "className",
+        key: "className",
+        sorter: (a: TableData, b: TableData) => compareText((a as any)?.className, (b as any)?.className),
+        render: (text: any) => text || "—",
+      },
+      {
+        title: "Section",
+        dataIndex: "sectionName",
+        key: "sectionName",
+        sorter: (a: TableData, b: TableData) => compareText((a as any)?.sectionName, (b as any)?.sectionName),
+        render: (text: any) => text || "—",
       },
       {
         title: "Student Name",
@@ -214,11 +232,10 @@ const GradeReport = () => {
           </div>
         ),
       },
-      ...subjectColumns,
       {
         title: "Total",
         key: "total",
-        render: (_text: any, record: any) => record.summary?.totalObtained ?? "—",
+        render: (_text: any, record: any) => formatTotalMarks(record.summary),
         sorter: (a: any, b: any) => compareNumber(a?.summary?.totalObtained, b?.summary?.totalObtained),
       },
       {
@@ -238,62 +255,50 @@ const GradeReport = () => {
         sorter: (a: any, b: any) => compareText(a?.summary?.grade, b?.summary?.grade),
       },
     ],
-    [routes.studentDetail, routes.studentList, subjectColumns]
+    [routes.studentDetail, routes.studentList]
   );
 
-  const exportColumns = useMemo(() => {
-    const subjectCols = (Array.isArray(reportData.subjects) ? reportData.subjects : []).map((s: any) => ({
-      title: s.subjectName || `Subject ${s.subjectId}`,
-      dataKey: `subj_${s.subjectId}`,
-    }));
-    return [
+  const exportColumns = useMemo(
+    () => [
       { title: "Admission No", dataKey: "admissionNo" },
+      { title: "Class", dataKey: "className" },
+      { title: "Section", dataKey: "sectionName" },
       { title: "Student Name", dataKey: "studentName" },
       { title: "Roll No", dataKey: "rollNo" },
-      ...subjectCols,
-      { title: "Total", dataKey: "totalObtained" },
+      { title: "Total", dataKey: "totalMarks" },
       { title: "Percent(%)", dataKey: "percentage" },
       { title: "Grade", dataKey: "grade" },
-    ];
-  }, [reportData.subjects]);
+    ],
+    []
+  );
 
   const exportRows = useMemo(() => {
-    const subjects = Array.isArray(reportData.subjects) ? reportData.subjects : [];
     return data.map((row: any) => {
-      const flat: Record<string, string | number> = {
+      return {
         admissionNo: row.admissionNo ?? "—",
+        className: row.className ?? "—",
+        sectionName: row.sectionName ?? "—",
         studentName: row.studentName ?? "—",
         rollNo: row.rollNo ?? "—",
-        totalObtained: row.summary?.totalObtained ?? "—",
+        totalMarks: formatTotalMarks(row.summary),
         percentage: row.summary?.percentage ?? "—",
         grade: row.summary?.grade ?? "—",
       };
-      subjects.forEach((s: any) => {
-        const marks = row.subjectMarks?.[String(s.subjectId)];
-        flat[`subj_${s.subjectId}`] =
-          !marks ? "—" : marks.isAbsent ? "AB" : (marks.marksObtained ?? "—");
-      });
-      return flat;
     });
-  }, [data, reportData.subjects]);
+  }, [data]);
 
   const handleExportExcel = () => {
-    const subjects = Array.isArray(reportData.subjects) ? reportData.subjects : [];
     const rows = data.map((row: any) => {
-      const o: Record<string, string | number> = {
+      return {
         "Admission No": row.admissionNo ?? "—",
+        Class: row.className ?? "—",
+        Section: row.sectionName ?? "—",
         "Student Name": row.studentName ?? "—",
         "Roll No": row.rollNo ?? "—",
-        Total: row.summary?.totalObtained ?? "—",
+        Total: formatTotalMarks(row.summary),
         "Percent(%)": row.summary?.percentage ?? "—",
         Grade: row.summary?.grade ?? "—",
       };
-      subjects.forEach((s: any) => {
-        const marks = row.subjectMarks?.[String(s.subjectId)];
-        const label = s.subjectName || `Subject ${s.subjectId}`;
-        o[label] = !marks ? "—" : marks.isAbsent ? "AB" : (marks.marksObtained ?? "—");
-      });
-      return o;
     });
     const stamp = new Date().toISOString().split("T")[0];
     exportToExcel(rows, `GradeReport_${stamp}`);
@@ -316,13 +321,14 @@ const GradeReport = () => {
   };
 
   const tableLoading = classesLoading || loading;
-  const noClassConfigured = !classesLoading && classOptions.length === 0;
+  const noClassConfigured = !classesLoading && classOptions.length <= 1;
   const noExamData =
     !tableLoading &&
     !error &&
-    selectedClassId &&
+    academicYearId != null &&
     Array.isArray(reportData.availableExams) &&
-    reportData.availableExams.length === 0;
+    reportData.availableExams.length === 0 &&
+    data.length === 0;
 
   return (
     <div>
@@ -394,7 +400,7 @@ const GradeReport = () => {
                                 className="select"
                                 options={classOptions}
                                 value={selectedClassId}
-                                onChange={(value) => setSelectedClassId(value || null)}
+                                onChange={(value) => setSelectedClassId(value || CLASS_ALL)}
                               />
                             </div>
                           </div>
@@ -428,6 +434,7 @@ const GradeReport = () => {
                           className="btn btn-light me-3"
                           onClick={(e) => {
                             e.preventDefault();
+                            setSelectedClassId(CLASS_ALL);
                             setSelectedSectionId(SECTION_ALL);
                             setSelectedExamId(EXAM_LATEST);
                           }}
@@ -457,7 +464,13 @@ const GradeReport = () => {
               )}
               {noExamData && (
                 <div className="alert alert-info mx-3 mt-3 mb-0" role="alert">
-                  No exam results are recorded for this class yet. Enter marks in Exam Results to see the grade report.
+                  No exams are scheduled for the selected academic year. Add exam schedules and enter marks in Exam
+                  Results to see the grade report.
+                </div>
+              )}
+              {!tableLoading && !error && data.length > 0 && reportData.availableExams?.length === 0 && (
+                <div className="alert alert-warning mx-3 mt-3 mb-0" role="alert">
+                  Students are listed, but no exam timetable was found for the selected filters.
                 </div>
               )}
               {tableLoading ? (
