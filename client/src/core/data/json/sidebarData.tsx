@@ -347,7 +347,6 @@ export const SidebarData = [
         showSubRoute: false,
 
         submenuItems: [
-          { label: "Attendance Report", link: routes.studentAttendance },
           { label: "Staff Attendance", link: routes.staffAttendance },
         ],
       },

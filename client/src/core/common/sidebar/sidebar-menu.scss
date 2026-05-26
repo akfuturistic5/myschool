@@ -1,0 +1,99 @@
+/* Theme primary (same as other menu hover/active) */
+$menu-primary: #3d5ee1;
+$menu-primary-bg: #f2f5ff;
+
+/* Submenu visibility */
+.sidebar .sidebar-menu li.submenu.submenu-open > ul {
+  display: block !important;
+}
+
+.sidebar .sidebar-menu li.submenu:not(.submenu-open) > ul {
+  display: none !important;
+}
+
+.sidebar .sidebar-menu li.submenu.submenu-open > a.subdrop ~ ul {
+  display: block !important;
+}
+
+/* Expanded parent: no background */
+.sidebar .sidebar-menu li.submenu > a.subdrop,
+.sidebar .sidebar-menu > ul li .submenu > a.subdrop,
+.sidebar .sidebar-menu li.submenu.submenu-two > a.subdrop {
+  background: transparent !important;
+}
+
+.sidebar .sidebar-menu li.submenu > a.subdrop i,
+.sidebar .sidebar-menu > ul li .submenu > a.subdrop i {
+  background: transparent !important;
+  color: #637381 !important;
+}
+
+/* Parent with active child: primary text, no background */
+.sidebar .sidebar-menu li.submenu > a.subdrop.parent-has-active {
+  background: transparent !important;
+}
+
+.sidebar .sidebar-menu li.submenu > a.subdrop.parent-has-active span {
+  color: $menu-primary !important;
+  font-weight: 600;
+}
+
+.sidebar .sidebar-menu li.submenu > a.subdrop.parent-has-active i {
+  background: transparent !important;
+  color: $menu-primary !important;
+}
+
+.sidebar .sidebar-menu li.submenu.submenu-two > a.subdrop.parent-has-active {
+  background: transparent !important;
+  color: $menu-primary !important;
+  font-weight: 600;
+}
+
+/* Default submenu items: readable, no background */
+.sidebar .sidebar-menu .submenu-open > ul > li > a:not(.active),
+.sidebar .sidebar-menu .submenu-open .submenu ul li a:not(.active) {
+  background: transparent !important;
+  color: #6f6f6f !important;
+}
+
+.sidebar .sidebar-menu .submenu-open > ul > li:not(.active),
+.sidebar .sidebar-menu .submenu-open > ul > li > a:not(.active) {
+  background: transparent !important;
+}
+
+.sidebar .sidebar-menu .submenu-open > ul > li.active > a:not(.active),
+.sidebar .sidebar-menu > ul > li ul > li.active > a:not(.active) {
+  background: transparent !important;
+}
+
+/* Active submenu = same as theme hover / top-level active (blue) */
+.sidebar .sidebar-menu .submenu-open > ul > li > a.active,
+.sidebar .sidebar-menu .submenu-open .submenu ul li a.active,
+.sidebar .sidebar-menu .submenu-open .submenu ul li a.submenu-two.active {
+  color: $menu-primary !important;
+  background: $menu-primary-bg !important;
+  border-radius: 5px;
+}
+
+.sidebar .sidebar-menu .submenu-open > ul > li > a.active::after,
+.sidebar .sidebar-menu .submenu-open .submenu ul li a.active::after {
+  background: $menu-primary !important;
+  border: none !important;
+}
+
+.sidebar .sidebar-menu .submenu-open > ul > li > a.active span {
+  color: $menu-primary !important;
+}
+
+/* Hover = same blue as active */
+.sidebar .sidebar-menu .submenu-open > ul > li > a:not(.active):hover,
+.sidebar .sidebar-menu .submenu-open .submenu ul li a:not(.active):hover {
+  color: $menu-primary !important;
+  background: transparent !important;
+}
+
+.sidebar .sidebar-menu .submenu-open > ul > li > a:not(.active):hover::after,
+.sidebar .sidebar-menu .submenu-open .submenu ul li a:not(.active):hover::after {
+  background: $menu-primary !important;
+  border: 2px solid $menu-primary-bg !important;
+}
