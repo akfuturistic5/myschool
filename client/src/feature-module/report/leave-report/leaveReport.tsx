@@ -25,14 +25,26 @@ const compareText = (left: unknown, right: unknown) =>
 const compareNumber = (left: unknown, right: unknown) =>
   Number(left ?? 0) - Number(right ?? 0);
 
-const leaveBucketFromName = (name: unknown) => {
-  const value = String(name || "").trim().toLowerCase();
-  if (value.includes("medical")) return "medical";
-  if (value.includes("casual")) return "casual";
-  if (value.includes("maternity")) return "maternity";
-  if (value.includes("paternity")) return "paternity";
-  if (value.includes("special")) return "special";
-  return null;
+const normalizeLeaveTypeName = (value: unknown) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+type StaffLeaveTypeDef = {
+  /** Stable column key (leave_types.id as string). */
+  key: string;
+  id: number;
+  label: string;
+  max: number;
+  normalizedName: string;
+};
+
+const isStaffOrBothLeaveType = (lt: { applicable_for?: string }) => {
+  const v = String(lt?.applicable_for ?? "both")
+    .trim()
+    .toLowerCase();
+  return v === "staff" || v === "both" || v === "";
 };
 
 /** Rejected/declined leaves must not reduce available balance or total days taken. */
@@ -128,11 +140,12 @@ const LeaveReport = () => {
     refetchStaffLeaves();
     refetchStudentLeaves();
   };
+  /** Staff report: only leave_types with applicable_for staff or both (see API + useLeaveTypes filter). */
   const {
     leaveTypes,
     loading: leaveTypesLoading,
     error: leaveTypesError,
-  } = useLeaveTypes();
+  } = useLeaveTypes({ applicableFor: "staff" });
   const [selectedDateRange, setSelectedDateRange] = useState<[Dayjs, Dayjs] | null>(null);
 
   const [selectedTeacherRole, setSelectedTeacherRole] = useState<string>("All");
@@ -151,25 +164,42 @@ const LeaveReport = () => {
   const [appliedStudentStatus, setAppliedStudentStatus] = useState<string>("All");
   const [appliedStudentLeaveType, setAppliedStudentLeaveType] = useState<string>("All");
 
-  const teacherLeaveTypeMax = useMemo(() => {
-    const fallback = {
-      medical: 10,
-      casual: 12,
-      maternity: 90,
-      paternity: 15,
-      special: 5,
-    };
-    const next = { ...fallback };
-    (Array.isArray(leaveTypes) ? leaveTypes : []).forEach((lt: any) => {
-      const bucket = leaveBucketFromName(lt?.label || lt?.leave_type || lt?.leave_type_name);
-      if (!bucket) return;
-      const max = Number(lt?.max_days_per_year ?? lt?.max_days ?? 0);
-      if (Number.isFinite(max) && max > 0) {
-        (next as any)[bucket] = max;
-      }
+  /** All staff + both leave types from master — columns show even if unused yet. */
+  const staffLeaveTypeDefs: StaffLeaveTypeDef[] = useMemo(() => {
+    const master = Array.isArray(leaveTypes) ? leaveTypes : [];
+    const seenIds = new Set<number>();
+    const defs: StaffLeaveTypeDef[] = [];
+
+    master.forEach((lt: any) => {
+      if (!isStaffOrBothLeaveType(lt)) return;
+      const id = Number(lt.id ?? lt.value);
+      if (!Number.isFinite(id) || id < 1 || seenIds.has(id)) return;
+      seenIds.add(id);
+      const rawName = lt.label || lt.leave_type_name || lt.leave_type || lt.name;
+      const maxRaw = lt.max_days_per_year ?? lt.max_days ?? lt.max ?? 0;
+      const max =
+        Number.isFinite(Number(maxRaw)) && Number(maxRaw) > 0 ? Number(maxRaw) : 0;
+      defs.push({
+        key: String(id),
+        id,
+        label: String(rawName || "Leave"),
+        max,
+        normalizedName: normalizeLeaveTypeName(rawName),
+      });
     });
-    return next;
+
+    return defs.sort((a, b) => a.label.localeCompare(b.label));
   }, [leaveTypes]);
+
+  const staffLeaveTypeKeyMaps = useMemo(() => {
+    const byId = new Map<number, string>();
+    const byName = new Map<string, string>();
+    staffLeaveTypeDefs.forEach((def) => {
+      byId.set(def.id, def.key);
+      if (def.normalizedName) byName.set(def.normalizedName, def.key);
+    });
+    return { byId, byName };
+  }, [staffLeaveTypeDefs]);
 
   const staffRoster = useMemo(() => {
     if (isAdminViewer && Array.isArray(staffList) && staffList.length > 0) {
@@ -198,58 +228,51 @@ const LeaveReport = () => {
   );
 
   const teacherLeaveRows = useMemo(() => {
-    const usageByStaff = new Map<
-      string,
-      { medical: number; casual: number; maternity: number; paternity: number; special: number }
-    >();
+    const usageByStaff = new Map<string, Record<string, number>>();
     leavesByStaffId.forEach((leaves, staffId) => {
       const staffKey = String(staffId);
       leaves.forEach((row: any) => {
         if (isRejectedLeave(row)) return;
-        const bucket = leaveBucketFromName(row.leaveType);
-        if (!bucket) return;
+        const tid = Number(row.leaveTypeId ?? row.leave_type_id);
+        let typeKey: string | undefined;
+        if (Number.isFinite(tid) && tid > 0) {
+          typeKey = staffLeaveTypeKeyMaps.byId.get(tid);
+        }
+        if (!typeKey) {
+          const norm = normalizeLeaveTypeName(row.leaveType);
+          typeKey = norm ? staffLeaveTypeKeyMaps.byName.get(norm) : undefined;
+        }
+        if (!typeKey) return;
         const days = Number(row.noOfDays || 0);
-        const usage = usageByStaff.get(staffKey) || {
-          medical: 0,
-          casual: 0,
-          maternity: 0,
-          paternity: 0,
-          special: 0,
-        };
-        usage[bucket] += Number.isFinite(days) && days > 0 ? days : 0;
+        if (!Number.isFinite(days) || days <= 0) return;
+        const usage = usageByStaff.get(staffKey) || {};
+        usage[typeKey] = (usage[typeKey] || 0) + days;
         usageByStaff.set(staffKey, usage);
       });
     });
 
     const mapStaffToRow = (staff: any, leaves: any[]) => {
       const staffKey = String(staff.staffId);
-      const usage = usageByStaff.get(staffKey) || {
-        medical: 0,
-        casual: 0,
-        maternity: 0,
-        paternity: 0,
-        special: 0,
-      };
+      const usage = usageByStaff.get(staffKey) || {};
       const totalLeaveDays = sumCountableLeaveDays(leaves);
-      return {
+      const base: any = {
         key: `staff-leave-report-${staff.staffId}`,
         staffId: staff.staffId,
         name: staff.name,
         role: staff.role,
         noOfDays: totalLeaveDays,
         avatar: staff.avatar || leaves[0]?.photoUrl || "",
-        medicalUsed: usage.medical,
-        medicalAvailable: Math.max(teacherLeaveTypeMax.medical - usage.medical, 0),
-        casualUsed: usage.casual,
-        casualAvailable: Math.max(teacherLeaveTypeMax.casual - usage.casual, 0),
-        maternityUsed: usage.maternity,
-        maternityAvailable: Math.max(teacherLeaveTypeMax.maternity - usage.maternity, 0),
-        paternityUsed: usage.paternity,
-        paternityAvailable: Math.max(teacherLeaveTypeMax.paternity - usage.paternity, 0),
-        specialUsed: usage.special,
-        specialAvailable: Math.max(teacherLeaveTypeMax.special - usage.special, 0),
         hasLeave: leaves.some((leave) => !isRejectedLeave(leave)),
       };
+
+      staffLeaveTypeDefs.forEach((def) => {
+        const used = Number(usage[def.key] ?? 0);
+        base[`leaveUsed_${def.key}`] = used;
+        base[`leaveAvailable_${def.key}`] =
+          def.max > 0 ? Math.max(def.max - used, 0) : "—";
+      });
+
+      return base;
     };
 
     if (staffRoster.length > 0) {
@@ -276,7 +299,7 @@ const LeaveReport = () => {
       const leaves = leavesByStaffId.get(Number(staff.staffId)) || [];
       return mapStaffToRow(staff, leaves);
     });
-  }, [staffRoster, leavesByStaffId, staffLeaveApplications, teacherLeaveTypeMax]);
+  }, [staffRoster, leavesByStaffId, staffLeaveApplications, staffLeaveTypeDefs, staffLeaveTypeKeyMaps]);
 
   const teacherRoleOptions = useMemo(() => {
     const unique = Array.from(
@@ -300,16 +323,13 @@ const LeaveReport = () => {
     return [{ value: "All", label: "All Status" }, ...unique.map((value) => ({ value, label: value }))];
   }, [staffLeaveApplications]);
 
-  const teacherLeaveTypeOptions = useMemo(() => {
-    const unique = Array.from(
-      new Set(
-        staffLeaveApplications
-          .map((row: any) => String(row.leaveType || "").trim())
-          .filter((value: string) => value && value !== "—" && value !== "N/A")
-      )
-    ).sort((a, b) => a.localeCompare(b));
-    return [{ value: "All", label: "All Leave Types" }, ...unique.map((value) => ({ value, label: value }))];
-  }, [staffLeaveApplications]);
+  const teacherLeaveTypeOptions = useMemo(
+    () => [
+      { value: "All", label: "All Leave Types" },
+      ...staffLeaveTypeDefs.map((def) => ({ value: def.label, label: def.label })),
+    ],
+    [staffLeaveTypeDefs]
+  );
 
   const filteredTeacherRows = useMemo(() => {
     return teacherLeaveRows.filter((row: any) => {
@@ -480,6 +500,37 @@ const LeaveReport = () => {
     studentLeaveRows,
   ]);
 
+  const teacherLeaveTypeColumns = useMemo(
+    () =>
+      staffLeaveTypeDefs.map((def) => {
+        const usedKey = `leaveUsed_${def.key}`;
+        const availKey = `leaveAvailable_${def.key}`;
+        const titleSuffix = def.max > 0 ? ` (${def.max})` : "";
+        return {
+          title: `${def.label}${titleSuffix}`,
+          children: [
+            {
+              title: "Used",
+              dataIndex: usedKey,
+              key: usedKey,
+              sorter: (a: any, b: any) => compareNumber(a?.[usedKey], b?.[usedKey]),
+            },
+            {
+              title: "Available",
+              dataIndex: availKey,
+              key: availKey,
+              sorter: (a: any, b: any) =>
+                compareNumber(
+                  typeof a?.[availKey] === "number" ? a[availKey] : 0,
+                  typeof b?.[availKey] === "number" ? b[availKey] : 0
+                ),
+            },
+          ],
+        };
+      }),
+    [staffLeaveTypeDefs]
+  );
+
   const teacherColumns = [
     {
       title: "Name",
@@ -506,91 +557,7 @@ const LeaveReport = () => {
       key: "role",
       sorter: (a: TableData, b: TableData) => compareText(a?.role, b?.role),
     },
-    {
-      title: `Medical Leave (${teacherLeaveTypeMax.medical})`,
-      children: [
-        {
-          title: "Used",
-          dataIndex: "medicalUsed",
-          key: "medicalUsed",
-          sorter: (a: TableData, b: TableData) => compareNumber(a?.medicalUsed, b?.medicalUsed),
-        },
-        {
-          title: "Available",
-          dataIndex: "medicalAvailable",
-          key: "medicalAvailable",
-          sorter: (a: TableData, b: TableData) => compareNumber(a?.medicalAvailable, b?.medicalAvailable),
-        },
-      ],
-    },
-    {
-      title: `Casual Leave (${teacherLeaveTypeMax.casual})`,
-      children: [
-        {
-          title: "Used",
-          dataIndex: "casualUsed",
-          key: "casualUsed",
-          sorter: (a: TableData, b: TableData) => compareNumber(a?.casualUsed, b?.casualUsed),
-        },
-        {
-          title: "Available",
-          dataIndex: "casualAvailable",
-          key: "casualAvailable",
-          sorter: (a: TableData, b: TableData) => compareNumber(a?.casualAvailable, b?.casualAvailable),
-        },
-      ],
-    },
-    {
-      title: `Maternity Leave (${teacherLeaveTypeMax.maternity})`,
-      children: [
-        {
-          title: "Used",
-          dataIndex: "maternityUsed",
-          key: "maternityUsed",
-          sorter: (a: TableData, b: TableData) => compareNumber(a?.maternityUsed, b?.maternityUsed),
-        },
-        {
-          title: "Available",
-          dataIndex: "maternityAvailable",
-          key: "maternityAvailable",
-          sorter: (a: TableData, b: TableData) => compareNumber(a?.maternityAvailable, b?.maternityAvailable),
-        },
-      ],
-    },
-    {
-      title: `Paternity Leave (${teacherLeaveTypeMax.paternity})`,
-      children: [
-        {
-          title: "Used",
-          dataIndex: "paternityUsed",
-          key: "paternityUsed",
-          sorter: (a: TableData, b: TableData) => compareNumber(a?.paternityUsed, b?.paternityUsed),
-        },
-        {
-          title: "Available",
-          dataIndex: "paternityAvailable",
-          key: "paternityAvailable",
-          sorter: (a: TableData, b: TableData) => compareNumber(a?.paternityAvailable, b?.paternityAvailable),
-        },
-      ],
-    },
-    {
-      title: `Special Leave (${teacherLeaveTypeMax.special})`,
-      children: [
-        {
-          title: "Used",
-          dataIndex: "specialUsed",
-          key: "specialUsed",
-          sorter: (a: TableData, b: TableData) => compareNumber(a?.specialUsed, b?.specialUsed),
-        },
-        {
-          title: "Available",
-          dataIndex: "specialAvailable",
-          key: "specialAvailable",
-          sorter: (a: TableData, b: TableData) => compareNumber(a?.specialAvailable, b?.specialAvailable),
-        },
-      ],
-    },
+    ...teacherLeaveTypeColumns,
     {
       title: "Total Leave Days",
       dataIndex: "noOfDays",
@@ -731,24 +698,26 @@ const LeaveReport = () => {
     }
   };
 
-  const teacherExportColumns = useMemo(
-    () => [
+  const teacherExportColumns = useMemo(() => {
+    const base: { title: string; dataKey: string }[] = [
       { title: "Name", dataKey: "name" },
       { title: "Role", dataKey: "role" },
-      { title: "Medical Used", dataKey: "medicalUsed" },
-      { title: "Medical Available", dataKey: "medicalAvailable" },
-      { title: "Casual Used", dataKey: "casualUsed" },
-      { title: "Casual Available", dataKey: "casualAvailable" },
-      { title: "Maternity Used", dataKey: "maternityUsed" },
-      { title: "Maternity Available", dataKey: "maternityAvailable" },
-      { title: "Paternity Used", dataKey: "paternityUsed" },
-      { title: "Paternity Available", dataKey: "paternityAvailable" },
-      { title: "Special Used", dataKey: "specialUsed" },
-      { title: "Special Available", dataKey: "specialAvailable" },
+    ];
+    const dynamic = staffLeaveTypeDefs.flatMap((def) => {
+      const usedKey = `leaveUsed_${def.key}`;
+      const availKey = `leaveAvailable_${def.key}`;
+      const titleSuffix = def.max > 0 ? ` (${def.max})` : "";
+      return [
+        { title: `${def.label}${titleSuffix} Used`, dataKey: usedKey },
+        { title: `${def.label}${titleSuffix} Available`, dataKey: availKey },
+      ];
+    });
+    return [
+      ...base,
+      ...dynamic,
       { title: "Total Leave Days", dataKey: "noOfDays" },
-    ],
-    []
-  );
+    ];
+  }, [staffLeaveTypeDefs]);
 
   const studentExportColumns = useMemo(
     () => [
@@ -769,21 +738,21 @@ const LeaveReport = () => {
   const handleExportExcel = () => {
     const dateStamp = new Date().toISOString().split("T")[0];
     if (activeTab === "teacher") {
-      const rows = filteredTeacherRows.map((row: any) => ({
-        Name: row.name,
-        Role: row.role,
-        "Medical Used": row.medicalUsed,
-        "Medical Available": row.medicalAvailable,
-        "Casual Used": row.casualUsed,
-        "Casual Available": row.casualAvailable,
-        "Maternity Used": row.maternityUsed,
-        "Maternity Available": row.maternityAvailable,
-        "Paternity Used": row.paternityUsed,
-        "Paternity Available": row.paternityAvailable,
-        "Special Used": row.specialUsed,
-        "Special Available": row.specialAvailable,
-        "Total Leave Days": row.noOfDays,
-      }));
+      const rows = filteredTeacherRows.map((row: any) => {
+        const base: Record<string, string | number> = {
+          Name: row.name,
+          Role: row.role,
+          "Total Leave Days": row.noOfDays,
+        };
+        staffLeaveTypeDefs.forEach((def) => {
+          const usedKey = `leaveUsed_${def.key}`;
+          const availKey = `leaveAvailable_${def.key}`;
+          const titleSuffix = def.max > 0 ? ` (${def.max})` : "";
+          base[`${def.label}${titleSuffix} Used`] = row[usedKey] ?? 0;
+          base[`${def.label}${titleSuffix} Available`] = row[availKey] ?? "—";
+        });
+        return base;
+      });
       exportToExcel(rows, `StaffLeaveReport_${dateStamp}`);
       return;
     }
