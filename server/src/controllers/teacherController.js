@@ -546,7 +546,16 @@ const getTeacherById = async (req, res) => {
       return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
     }
 
-    const classTeacherParams = [row.staff_id];
+    // Match Teacher Assignments CRUD: scope class/subject assignments to the selected (or current) academic year.
+    const assignmentAcademicYearId = await resolveAcademicYearId(
+      req.query.academicYearId ?? req.query.academic_year_id
+    );
+    const yearFilterSql = assignmentAcademicYearId ? ' AND ct.academic_year_id = $2' : '';
+    const yearFilterSqlTa = assignmentAcademicYearId ? ' AND ta.academic_year_id = $2' : '';
+    const assignmentYearParams = assignmentAcademicYearId
+      ? [row.staff_id, assignmentAcademicYearId]
+      : [row.staff_id];
+
     const classTeacherResult = await query(
       `SELECT
          c.id AS class_id,
@@ -557,12 +566,11 @@ const getTeacherById = async (req, res) => {
        INNER JOIN classes c ON c.id = ct.class_id
        WHERE ct.staff_id = $1
          AND ct.class_section_id IS NULL
-         AND ct.deleted_at IS NULL
+         AND ct.deleted_at IS NULL${yearFilterSql}
        ORDER BY c.class_name ASC`,
-      classTeacherParams
+      assignmentYearParams
     );
 
-    const sectionTeacherParams = [row.staff_id];
     const sectionTeacherResult = await query(
       `SELECT
          csec.id AS section_id,
@@ -576,12 +584,11 @@ const getTeacherById = async (req, res) => {
        INNER JOIN sections sec ON sec.id = csec.section_id
        INNER JOIN classes c ON c.id = csec.class_id
        WHERE ct.staff_id = $1
-         AND ct.deleted_at IS NULL
+         AND ct.deleted_at IS NULL${yearFilterSql}
        ORDER BY c.class_name ASC, sec.section_name ASC`,
-      sectionTeacherParams
+      assignmentYearParams
     );
 
-    const subjectTeacherParams = [row.staff_id];
     const subjectTeacherResult = await query(
       `SELECT
          ta.id,
@@ -597,9 +604,9 @@ const getTeacherById = async (req, res) => {
        INNER JOIN class_subjects csub ON csub.id = ta.class_subject_id
        INNER JOIN subjects sub ON sub.id = csub.subject_id
        WHERE ta.staff_id = $1
-         AND ta.deleted_at IS NULL
+         AND ta.deleted_at IS NULL${yearFilterSqlTa}
        ORDER BY c.class_name ASC, sec.section_name ASC, sub.subject_name ASC`,
-      subjectTeacherParams
+      assignmentYearParams
     );
 
     const enrichedRow = {
@@ -624,10 +631,14 @@ const getTeacherById = async (req, res) => {
         classCode: item.class_code,
         sectionName: item.section_name,
         subjectName: item.subject_name,
+        subject_type: item.subject_type,
       })),
+      assignment_academic_year_id: assignmentAcademicYearId,
     };
 
-    await enrichStaffProfileAllocations(enrichedRow, row.staff_id);
+    await enrichStaffProfileAllocations(enrichedRow, row.staff_id, {
+      academicYearId: assignmentAcademicYearId,
+    });
 
     return success(res, 200, 'Teacher fetched successfully', enrichedRow);
   } catch (error) {

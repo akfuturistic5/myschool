@@ -447,7 +447,10 @@ const AccountCategories = () => {
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
               <h4 className="mb-3">Category List</h4>
-              <form className="d-flex align-items-center flex-wrap gap-2 mb-3" onSubmit={onFilterSubmit}>
+              <form
+                className="d-flex align-items-center flex-wrap gap-2 mb-3 me-5"
+                onSubmit={onFilterSubmit}
+              >
                 <select
                   className="form-select form-select-sm"
                   style={{ minWidth: "140px" }}

@@ -342,7 +342,7 @@ const AdministrativeDashboard = () => {
               <div className="card-body">
                 <h6 className="text-muted mb-1">Finance Net</h6>
                 <h4 className="mb-0">{formatFeeAmount(financeSummary.netPosition)}</h4>
-                <small className="text-muted">Earnings: {formatFeeAmount(financeSummary.totalEarnings)}</small>
+                <small className="text-muted">Total income: {formatFeeAmount(financeSummary.totalIncome)}</small>
               </div>
             </div>
           </div>

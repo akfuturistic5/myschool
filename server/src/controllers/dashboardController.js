@@ -1718,43 +1718,51 @@ const getDashboardFeeStats = async (req, res) => {
       console.warn('Dashboard: library fines sum failed', e.message);
     }
 
+    // Match Collect Fees (/fees-collect/list): balance = (compulsory + optional) - paid;
+    // do not use fees_paids.balance_amount (can be stale). Count assignments from fees_paids rows.
     try {
-      const outstandingParams = hasYearFilter ? [effectiveAcademicYearId] : [];
-      const outstandingResult = await query(
-        `SELECT
-          COUNT(*) FILTER (WHERE fp.balance_amount > 0)::int AS student_not_paid,
-          COALESCE(SUM(fp.balance_amount) FILTER (WHERE fp.balance_amount > 0), 0)::numeric AS total_outstanding
-        FROM fees_paids fp
-        INNER JOIN students s ON s.id = fp.student_id AND COALESCE(s.is_active, true) = true
-        WHERE (${hasYearFilter ? 'fp.academic_year_id = $1' : 'TRUE'})
-      `,
-        outstandingParams
-      );
-      const row = outstandingResult.rows[0];
+      const feeSummaryParams = hasYearFilter ? [effectiveAcademicYearId] : [];
+      const yearClause = hasYearFilter ? 'fp.academic_year_id = $1' : 'TRUE';
+      const feeSummarySql = `
+        SELECT
+          COUNT(*) FILTER (WHERE balance > 0)::int AS student_not_paid,
+          COALESCE(SUM(balance) FILTER (WHERE balance > 0), 0)::numeric AS total_outstanding,
+          COALESCE(SUM(total_assigned), 0)::numeric AS total_assigned_amount,
+          COUNT(*)::int AS students_with_assignments,
+          COUNT(*) FILTER (WHERE total_paid > 0)::int AS students_with_any_payment
+        FROM (
+          SELECT
+            (COALESCE(fp.total_payable, 0) + COALESCE(opt.total_optional, 0)) AS total_assigned,
+            COALESCE(fp.total_paid, 0) AS total_paid,
+            GREATEST(
+              0,
+              (COALESCE(fp.total_payable, 0) + COALESCE(opt.total_optional, 0)) - COALESCE(fp.total_paid, 0)
+            ) AS balance
+          FROM fees_paids fp
+          INNER JOIN students s ON s.id = fp.student_id
+            AND LOWER(TRIM(COALESCE(s.status, ''))) = 'active'
+            AND s.deleted_at IS NULL
+          LEFT JOIN LATERAL (
+            SELECT COALESCE(SUM(fct.amount), 0) AS total_optional
+            FROM fees_class_types fct
+            JOIN fees f ON fct.fee_id = f.id
+            WHERE f.class_id = fp.class_id
+              AND f.academic_year_id = fp.academic_year_id
+              AND fct.is_optional = true
+              AND f.deleted_at IS NULL
+          ) opt ON TRUE
+          WHERE ${yearClause}
+        ) fee_rows`;
+
+      const feeSummaryResult = await query(feeSummarySql, feeSummaryParams);
+      const row = feeSummaryResult.rows[0];
       studentNotPaid = parseInt(row?.student_not_paid || '0', 10) || 0;
       totalOutstanding = parseFloat(row?.total_outstanding || '0') || 0;
-    } catch (e) {
-      console.warn('Dashboard: fee outstanding calc failed', e.message);
-    }
-
-    try {
-      const detailParams = hasYearFilter ? [effectiveAcademicYearId] : [];
-      const detailResult = await query(
-        `SELECT
-          COALESCE(SUM(fp.total_payable), 0)::numeric AS total_assigned_amount,
-          COUNT(*)::int AS students_with_assignments,
-          COUNT(*) FILTER (WHERE fp.total_paid > 0)::int AS students_with_any_payment
-        FROM fees_paids fp
-        INNER JOIN students s ON s.id = fp.student_id AND COALESCE(s.is_active, true) = true
-        WHERE (${hasYearFilter ? 'fp.academic_year_id = $1' : 'TRUE'})`,
-        detailParams
-      );
-      const row = detailResult.rows[0];
       totalAssignedAmount = parseFloat(row?.total_assigned_amount || '0') || 0;
       studentsWithAssignments = parseInt(row?.students_with_assignments || '0', 10) || 0;
       studentsWithAnyPayment = parseInt(row?.students_with_any_payment || '0', 10) || 0;
     } catch (e) {
-      console.warn('Dashboard: fee details summary failed', e.message);
+      console.warn('Dashboard: fee summary calc failed', e.message);
     }
 
     res.status(200).json({
@@ -1780,7 +1788,7 @@ const getDashboardFeeStats = async (req, res) => {
   }
 };
 
-// Finance summary: fees + library fines (earnings); expenses when school_expenses table exists
+// Finance summary: fees + library fines + ledger income; expenses from financial_ledger (accounts module)
 const getDashboardFinanceSummary = async (req, res) => {
   try {
     const academicYearId = parseAcademicYearId(req);
@@ -1809,6 +1817,7 @@ const getDashboardFinanceSummary = async (req, res) => {
 
     let totalEarnings = 0;
     let totalFines = 0;
+    let totalLedgerIncome = 0;
     let totalExpenses = 0;
     let expensesTracked = false;
 
@@ -1846,20 +1855,55 @@ const getDashboardFinanceSummary = async (req, res) => {
     }
 
     try {
-      const tbl = await query(
-        `SELECT EXISTS (
-           SELECT 1 FROM information_schema.tables
-           WHERE table_schema = 'public' AND table_name = 'school_expenses'
-         ) AS e`
-      );
-      expensesTracked = Boolean(tbl.rows[0]?.e);
-      if (expensesTracked) {
-        const expRes = await query(
-          'SELECT COALESCE(SUM(amount::numeric), 0) AS total FROM school_expenses WHERE COALESCE(is_active, true) = true'
-        );
-        totalExpenses = parseFloat(expRes.rows[0]?.total || '0') || 0;
+      const incParams = hasYearFilter ? [effectiveAcademicYearId] : [];
+      let incSql = hasYearFilter
+        ? `SELECT COALESCE(SUM(fl.amount::numeric), 0) AS total
+           FROM financial_ledger fl
+           WHERE fl.deleted_at IS NULL
+             AND fl.transaction_type = 'Income'
+             AND fl.academic_year_id = $1`
+        : `SELECT COALESCE(SUM(fl.amount::numeric), 0) AS total
+           FROM financial_ledger fl
+           WHERE fl.deleted_at IS NULL
+             AND fl.transaction_type = 'Income'`;
+      if (feeWin.from && feeWin.to) {
+        const a = incParams.length + 1;
+        const b = incParams.length + 2;
+        incSql += ` AND fl.transaction_date >= $${a}::date AND fl.transaction_date <= $${b}::date`;
+        incParams.push(feeWin.from, feeWin.to);
       }
+      const incRes = await query(incSql, incParams);
+      totalLedgerIncome = parseFloat(incRes.rows[0]?.total || '0') || 0;
     } catch (e) {
+      console.warn('Dashboard: financial_ledger income sum failed', e.message);
+      totalLedgerIncome = 0;
+    }
+
+    const totalIncome = totalEarnings + totalFines + totalLedgerIncome;
+
+    try {
+      const expParams = hasYearFilter ? [effectiveAcademicYearId] : [];
+      let expSql = hasYearFilter
+        ? `SELECT COALESCE(SUM(fl.amount::numeric), 0) AS total
+           FROM financial_ledger fl
+           WHERE fl.deleted_at IS NULL
+             AND fl.transaction_type = 'Expense'
+             AND fl.academic_year_id = $1`
+        : `SELECT COALESCE(SUM(fl.amount::numeric), 0) AS total
+           FROM financial_ledger fl
+           WHERE fl.deleted_at IS NULL
+             AND fl.transaction_type = 'Expense'`;
+      if (feeWin.from && feeWin.to) {
+        const a = expParams.length + 1;
+        const b = expParams.length + 2;
+        expSql += ` AND fl.transaction_date >= $${a}::date AND fl.transaction_date <= $${b}::date`;
+        expParams.push(feeWin.from, feeWin.to);
+      }
+      const expRes = await query(expSql, expParams);
+      totalExpenses = parseFloat(expRes.rows[0]?.total || '0') || 0;
+      expensesTracked = true;
+    } catch (e) {
+      console.warn('Dashboard: financial_ledger expenses sum failed', e.message);
       totalExpenses = 0;
       expensesTracked = false;
     }
@@ -1870,8 +1914,10 @@ const getDashboardFinanceSummary = async (req, res) => {
       data: {
         totalEarnings,
         totalFines,
+        totalLedgerIncome,
+        totalIncome,
         totalExpenses,
-        netPosition: totalEarnings + totalFines - totalExpenses,
+        netPosition: totalIncome - totalExpenses,
         feePeriod: feeWin.label,
         expensesTracked,
       },

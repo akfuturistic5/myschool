@@ -2,10 +2,12 @@
 import TeacherModal from '../teacherModal';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
+import { useSelector } from 'react-redux';
 import { all_routes } from '../../../router/all_routes';
 import TeacherSidebar from './teacherSidebar';
 import TeacherBreadcrumb from './teacherBreadcrumb';
 import { apiService } from '../../../../core/services/apiService';
+import { selectSelectedAcademicYearId } from '../../../../core/data/redux/academicYearSlice';
 
 interface TeacherDetailsLocationState {
   teacherId?: number;
@@ -18,6 +20,7 @@ const TeacherDetails = () => {
   const location = useLocation();
   const state = location.state as TeacherDetailsLocationState | null;
   const teacherId = state?.teacherId ?? state?.teacher?.id;
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
   const [teacher, setTeacher] = useState<any>(state?.teacher ?? null);
   const [loading, setLoading] = useState(!!teacherId);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -37,7 +40,7 @@ const TeacherDetails = () => {
       setLoading(true);
       setLoadError(null);
       apiService
-        .getTeacherById(teacherId)
+        .getTeacherById(teacherId, academicYearId ? { academicYearId } : {})
         .then((res: any) => {
           if (res?.data) {
             setTeacher(res.data);
@@ -51,7 +54,7 @@ const TeacherDetails = () => {
         })
         .finally(() => setLoading(false));
     }
-  }, [teacherId]);
+  }, [teacherId, academicYearId]);
 
   if (loading) {
     return (

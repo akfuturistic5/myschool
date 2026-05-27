@@ -410,6 +410,8 @@ export const useDashboardFinanceSummary = (options = {}) => {
   const [financeSummary, setFinanceSummary] = useState({
     totalEarnings: 0,
     totalFines: 0,
+    totalLedgerIncome: 0,
+    totalIncome: 0,
     totalExpenses: 0,
     netPosition: 0,
     feePeriod: 'all',
@@ -432,11 +434,15 @@ export const useDashboardFinanceSummary = (options = {}) => {
         if (mounted && res.status === 'SUCCESS' && res.data) {
           const te = res.data.totalEarnings ?? 0;
           const tf = res.data.totalFines ?? 0;
+          const tli = res.data.totalLedgerIncome ?? 0;
+          const ti = res.data.totalIncome != null ? res.data.totalIncome : te + tf + tli;
           const tx = res.data.totalExpenses ?? 0;
-          const net = res.data.netPosition != null ? res.data.netPosition : te + tf - tx;
+          const net = res.data.netPosition != null ? res.data.netPosition : ti - tx;
           setFinanceSummary({
             totalEarnings: te,
             totalFines: tf,
+            totalLedgerIncome: tli,
+            totalIncome: ti,
             totalExpenses: tx,
             netPosition: net,
             feePeriod: res.data.feePeriod ?? feePeriod,
@@ -449,6 +455,8 @@ export const useDashboardFinanceSummary = (options = {}) => {
           setFinanceSummary({
             totalEarnings: 0,
             totalFines: 0,
+            totalLedgerIncome: 0,
+            totalIncome: 0,
             totalExpenses: 0,
             netPosition: 0,
             feePeriod: 'all',

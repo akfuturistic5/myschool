@@ -3,6 +3,8 @@ const { success, error: errorResponse } = require('../utils/responseHelper');
 const {
   resolveSectionForAssignment,
   getClassAssignmentMeta,
+  assertClassTeacherSlotAvailable,
+  assertSubjectTeacherSlotAvailable,
 } = require('../utils/teacherAssignmentRules');
 
 const parseId = (v) => {
@@ -127,6 +129,13 @@ const createClassTeacherAssignment = async (req, res) => {
     const resolved = await resolveSectionForAssignment(classId, sectionRaw, academicYearId);
     if (!resolved.ok) return errorResponse(res, resolved.status, resolved.message);
 
+    const slotCheck = await assertClassTeacherSlotAvailable(
+      classId,
+      resolved.classSectionId,
+      academicYearId
+    );
+    if (!slotCheck.ok) return errorResponse(res, slotCheck.status, slotCheck.message);
+
     const ins = await query(
       `INSERT INTO class_teachers (staff_id, class_id, class_section_id, role, academic_year_id, valid_period, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, daterange(CURRENT_DATE, '9999-12-31'::date, '[]'), NOW(), NOW())
@@ -160,6 +169,14 @@ const updateClassTeacherAssignment = async (req, res) => {
 
     const resolved = await resolveSectionForAssignment(classId, sectionRaw, academicYearId);
     if (!resolved.ok) return errorResponse(res, resolved.status, resolved.message);
+
+    const slotCheck = await assertClassTeacherSlotAvailable(
+      classId,
+      resolved.classSectionId,
+      academicYearId,
+      id
+    );
+    if (!slotCheck.ok) return errorResponse(res, slotCheck.status, slotCheck.message);
 
     const upd = await query(
       `UPDATE class_teachers SET
@@ -296,6 +313,14 @@ const createSubjectTeacherAssignment = async (req, res) => {
     const resolved = await resolveSectionForAssignment(classId, sectionRaw, academicYearId);
     if (!resolved.ok) return errorResponse(res, resolved.status, resolved.message);
 
+    const slotCheck = await assertSubjectTeacherSlotAvailable(
+      classId,
+      resolved.classSectionId,
+      classSubId,
+      academicYearId
+    );
+    if (!slotCheck.ok) return errorResponse(res, slotCheck.status, slotCheck.message);
+
     const ins = await query(
       `INSERT INTO subject_teacher_assignments (staff_id, class_id, class_section_id, class_subject_id, academic_year_id, valid_period, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, daterange(CURRENT_DATE, '9999-12-31'::date, '[]'), NOW(), NOW())
@@ -335,6 +360,15 @@ const updateSubjectTeacherAssignment = async (req, res) => {
 
     const resolved = await resolveSectionForAssignment(classId, sectionRaw, academicYearId);
     if (!resolved.ok) return errorResponse(res, resolved.status, resolved.message);
+
+    const slotCheck = await assertSubjectTeacherSlotAvailable(
+      classId,
+      resolved.classSectionId,
+      classSubId,
+      academicYearId,
+      id
+    );
+    if (!slotCheck.ok) return errorResponse(res, slotCheck.status, slotCheck.message);
 
     const upd = await query(
       `UPDATE subject_teacher_assignments SET

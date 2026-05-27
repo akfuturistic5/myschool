@@ -1491,8 +1491,13 @@ class ApiService {
     return this.makeRequest('/teachers/me');
   }
 
-  async getTeacherById(id) {
-    return this.makeRequest(`/teachers/${id}`);
+  async getTeacherById(id, params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.academicYearId != null && params.academicYearId !== '') {
+      searchParams.set('academicYearId', String(params.academicYearId));
+    }
+    const qs = searchParams.toString();
+    return this.makeRequest(`/teachers/${id}${qs ? `?${qs}` : ''}`);
   }
 
   async getTeachersByClass(classId) {

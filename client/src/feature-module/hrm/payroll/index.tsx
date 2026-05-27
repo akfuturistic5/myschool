@@ -3,11 +3,6 @@ import Table from "../../../core/common/dataTable/index";
 import { usePayroll } from "../../../core/hooks/usePayroll";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
-import {
-  month,
-  staffName,
-  year,
-} from "../../../core/common/selectoption/selectoption";
 import { Link, useNavigate } from "react-router-dom";
 import { all_routes } from "../../router/all_routes";
 import { apiService } from "../../../core/services/apiService";
@@ -17,19 +12,34 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 
+type SalaryPeriodParts = {
+  monthNum: number;
+  yearNum: number;
+  label: string;
+};
+
+const parseSalaryPeriod = (period: unknown): SalaryPeriodParts | null => {
+  if (period == null || period === "") return null;
+  const dateStr = String(period).split(",")[0].replace(/[\[\]\(\)]/g, "").trim();
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return null;
+  return {
+    monthNum: date.getMonth() + 1,
+    yearNum: date.getFullYear(),
+    label: date.toLocaleString("default", { month: "long", year: "numeric" }),
+  };
+};
+
 const Payroll = () => {
   const { payrollData, loading, refresh } = usePayroll();
   const [selectedRowKeys, setSelectedRowKeys] = React.useState<any[]>([]);
+  const [filterStaffId, setFilterStaffId] = React.useState<string | null>(null);
+  const [filterMonth, setFilterMonth] = React.useState<string | null>(null);
+  const [filterYear, setFilterYear] = React.useState<string | null>(null);
   const navigate = useNavigate();
   const routes = all_routes;
 
-  const formatSalaryPeriod = (period: any) => {
-    if (!period) return "—";
-    const dateStr = String(period).split(",")[0].replace(/[\[\]\(\)]/g, "");
-    const date = new Date(dateStr);
-    if (Number.isNaN(date.getTime())) return "—";
-    return date.toLocaleString("default", { month: "long", year: "numeric" });
-  };
+  const formatSalaryPeriod = (period: unknown) => parseSalaryPeriod(period)?.label ?? "—";
 
   const getExportRows = () =>
     (Array.isArray(payrollData) ? payrollData : []).map((row: any) => ({
@@ -220,6 +230,80 @@ const Payroll = () => {
   const onSelectionChange = (keys: any[]) => {
     setSelectedRowKeys(keys);
   };
+
+  const payrollRows = React.useMemo(
+    () => (Array.isArray(payrollData) ? payrollData : []),
+    [payrollData]
+  );
+
+  const filterStaffOptions = React.useMemo(() => {
+    const byStaff = new Map<string, string>();
+    payrollRows.forEach((row: { staff_id?: number | string; name?: string }) => {
+      const staffId = row.staff_id != null ? String(row.staff_id) : "";
+      const name = String(row.name || "").trim();
+      if (staffId && name && !byStaff.has(staffId)) {
+        byStaff.set(staffId, name);
+      }
+    });
+    return Array.from(byStaff.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [payrollRows]);
+
+  const filterMonthOptions = React.useMemo(() => {
+    const byMonth = new Map<number, string>();
+    payrollRows.forEach((row: { salary_period?: unknown }) => {
+      const parts = parseSalaryPeriod(row.salary_period);
+      if (parts && !byMonth.has(parts.monthNum)) {
+        byMonth.set(
+          parts.monthNum,
+          new Date(parts.yearNum, parts.monthNum - 1, 1).toLocaleString("default", { month: "long" })
+        );
+      }
+    });
+    return Array.from(byMonth.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([monthNum, label]) => ({ value: String(monthNum), label }));
+  }, [payrollRows]);
+
+  const filterYearOptions = React.useMemo(() => {
+    const years = new Set<number>();
+    payrollRows.forEach((row: { salary_period?: unknown }) => {
+      const parts = parseSalaryPeriod(row.salary_period);
+      if (parts) years.add(parts.yearNum);
+    });
+    return Array.from(years)
+      .sort((a, b) => b - a)
+      .map((y) => ({ value: String(y), label: String(y) }));
+  }, [payrollRows]);
+
+  const filteredPayrollData = React.useMemo(() => {
+    let rows = payrollRows;
+
+    if (filterStaffId) {
+      rows = rows.filter((row: { staff_id?: number | string }) =>
+        String(row.staff_id) === filterStaffId
+      );
+    }
+
+    if (filterMonth) {
+      const wantMonth = Number.parseInt(filterMonth, 10);
+      rows = rows.filter((row: { salary_period?: unknown }) => {
+        const parts = parseSalaryPeriod(row.salary_period);
+        return parts != null && parts.monthNum === wantMonth;
+      });
+    }
+
+    if (filterYear) {
+      const wantYear = Number.parseInt(filterYear, 10);
+      rows = rows.filter((row: { salary_period?: unknown }) => {
+        const parts = parseSalaryPeriod(row.salary_period);
+        return parts != null && parts.yearNum === wantYear;
+      });
+    }
+
+    return rows;
+  }, [payrollRows, filterStaffId, filterMonth, filterYear]);
 
   const handleBulkMarkPaid = async () => {
     if (!selectedRowKeys.length) return;
@@ -485,7 +569,11 @@ const Payroll = () => {
                   <i className="ti ti-filter me-2" />
                   Filter
                 </Link>
-                <div className="dropdown-menu drop-width" ref={dropdownMenuRef}>
+                <div
+                  className="dropdown-menu drop-width"
+                  ref={dropdownMenuRef}
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <form>
                     <div className="d-flex align-items-center border-bottom p-3">
                       <h4>Filter</h4>
@@ -495,26 +583,76 @@ const Payroll = () => {
                         <div className="col-md-6">
                           <div className="mb-3">
                             <label className="form-label">Staff Name</label>
-                            <CommonSelect className="select" options={staffName} />
+                            <CommonSelect
+                              className="select"
+                              options={filterStaffOptions}
+                              value={filterStaffId}
+                              onChange={(v) => setFilterStaffId(v || null)}
+                              placeholder={
+                                filterStaffOptions.length
+                                  ? "All staff"
+                                  : "No staff in payroll list"
+                              }
+                              isDisabled={!filterStaffOptions.length}
+                            />
                           </div>
                         </div>
                         <div className="col-md-6">
                           <div className="mb-3">
                             <label className="form-label">Month</label>
-                            <CommonSelect className="select" options={month} />
+                            <CommonSelect
+                              className="select"
+                              options={filterMonthOptions}
+                              value={filterMonth}
+                              onChange={(v) => setFilterMonth(v || null)}
+                              placeholder={
+                                filterMonthOptions.length
+                                  ? "All months"
+                                  : "No payroll months yet"
+                              }
+                              isDisabled={!filterMonthOptions.length}
+                            />
                           </div>
                         </div>
                         <div className="col-md-12">
                           <div className="mb-0">
                             <label className="form-label">Year</label>
-                            <CommonSelect className="select" options={year} />
+                            <CommonSelect
+                              className="select"
+                              options={filterYearOptions}
+                              value={filterYear}
+                              onChange={(v) => setFilterYear(v || null)}
+                              placeholder={
+                                filterYearOptions.length
+                                  ? "All years"
+                                  : "No payroll years yet"
+                              }
+                              isDisabled={!filterYearOptions.length}
+                            />
                           </div>
                         </div>
                       </div>
                     </div>
                     <div className="p-3 d-flex align-items-center justify-content-end">
-                      <Link to="#" className="btn btn-light me-3">Reset</Link>
-                      <button type="button" className="btn btn-primary" onClick={handleApplyClick}>Apply</button>
+                      <Link
+                        to="#"
+                        className="btn btn-light me-3"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setFilterStaffId(null);
+                          setFilterMonth(null);
+                          setFilterYear(null);
+                        }}
+                      >
+                        Reset
+                      </Link>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={handleApplyClick}
+                      >
+                        Apply
+                      </button>
                     </div>
                   </form>
                 </div>
@@ -524,7 +662,7 @@ const Payroll = () => {
           <div className="card-body p-0 py-3">
             <Table 
               columns={columns} 
-              dataSource={payrollData} 
+              dataSource={filteredPayrollData} 
               loading={loading}
               Selection={true} 
               selectedRowKeys={selectedRowKeys}

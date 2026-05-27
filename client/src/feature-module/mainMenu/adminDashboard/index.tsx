@@ -508,7 +508,7 @@ const AdminDashboard = () => {
     },
     series: [{
       name: 'Income',
-      data: [(financeSummary.totalEarnings ?? 0) + (financeSummary.totalFines ?? 0)]
+      data: [financeSummary.totalIncome ?? 0]
     }]
   };
   const totalExpenseArea: AxisChartConfig = {
@@ -1642,10 +1642,8 @@ const AdminDashboard = () => {
                   <div className="card-body">
                     <div className="d-flex align-items-center justify-content-between">
                       <div>
-                        <h6 className="mb-1">Fee collections</h6>
-                        <h2>{formatFeeAmount(financeSummary.totalEarnings)}</h2>
-                        <small className="text-muted d-block">Fee income window: {feePeriodLabel}. Library fines (returned, all-time): {formatFeeAmount(financeSummary.totalFines)}</small>
-                        <small className="text-muted d-block fw-semibold text-dark mt-1">Net position: {formatFeeAmount(financeSummary.netPosition)}</small>
+                        <h6 className="mb-1">Total Income</h6>
+                        <h2>{formatFeeAmount(financeSummary.totalIncome)}</h2>
                       </div>
                       <span className="avatar avatar-lg bg-primary">
                         <i className="ti ti-user-dollar" />
@@ -1667,11 +1665,6 @@ const AdminDashboard = () => {
                       <div>
                         <h6 className="mb-1">Total Expenses</h6>
                         <h2>{formatFeeAmount(financeSummary.totalExpenses)}</h2>
-                        <small className="text-muted">
-                          {financeSummary.expensesTracked
-                            ? 'From school_expenses (all-time total in database).'
-                            : 'Expenses not tracked: no school_expenses table — value is 0; net uses fees + fines only.'}
-                        </small>
                       </div>
                       <span className="avatar avatar-lg bg-danger">
                         <i className="ti ti-user-dollar" />
@@ -1781,7 +1774,7 @@ const AdminDashboard = () => {
                       </span>
                     </div>
                     <small className="text-muted d-block">
-                      Assigned students: {feeStats.studentsWithAssignments ?? 0} | Paid at least once: {feeStats.studentsWithAnyPayment ?? 0}
+                      Assigned students: {feeStats.studentsWithAssignments ?? 0}
                     </small>
                   </div>
                 </div>

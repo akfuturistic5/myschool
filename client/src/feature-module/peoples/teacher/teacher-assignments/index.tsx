@@ -15,6 +15,7 @@ type AssignmentMeta = {
   className?: string;
   activeSectionCount: number;
   assignmentRequiresSection: boolean;
+  assignedClassSectionIds?: number[];
 };
 
 type SubjectAssignmentRow = {
@@ -62,7 +63,10 @@ const TeacherAssignments = () => {
   // Meta & Hooks
   const [meta, setMeta] = useState<AssignmentMeta | null>(null);
   const [metaLoading, setMetaLoading] = useState(false);
-  const { sections, loading: sectionsLoading } = useSections(classId ? Number(classId) : null, { academicYearId });
+  const { sections, loading: sectionsLoading } = useSections(classId ? Number(classId) : null, {
+    academicYearId,
+    fetchAllWhenNoClass: false,
+  });
   const { subjects, loading: subjectsLoading } = useSubjects(classId ? Number(classId) : null, { academicYearId });
 
   // List State
@@ -123,25 +127,117 @@ const TeacherAssignments = () => {
     };
   }, [classId, academicYearId]);
 
-  const showSectionField = Boolean(meta?.assignmentRequiresSection);
-  
-  const sectionOptions = useMemo(
-    () =>
-      (sections || []).map((s: { id: number; section_name?: string }) => ({
-        value: String(s.id),
-        label: s.section_name ?? String(s.id),
-      })),
-    [sections]
+  const sectionRequired = Boolean(classId && meta?.assignmentRequiresSection);
+
+  const assignedClassSectionIds = useMemo(() => {
+    if (activeTab !== "class" || !classId) return new Set<number>();
+    const cid = Number(classId);
+    const assigned = new Set<number>();
+    classRows.forEach((r) => {
+      if (r.classId === cid && r.classSectionId != null && r.id !== editingId) {
+        assigned.add(Number(r.classSectionId));
+      }
+    });
+    if (assigned.size === 0 && Array.isArray(meta?.assignedClassSectionIds)) {
+      meta.assignedClassSectionIds.forEach((id) => assigned.add(Number(id)));
+    }
+    return assigned;
+  }, [activeTab, classId, meta?.assignedClassSectionIds, classRows, editingId]);
+
+  const sectionOptions = useMemo(() => {
+    const options = (sections || []).map((s: { id: number; section_name?: string }) => ({
+      value: String(s.id),
+      label: s.section_name ?? String(s.id),
+    }));
+    if (activeTab !== "class" || assignedClassSectionIds.size === 0) {
+      return options;
+    }
+    return options.filter((o) => !assignedClassSectionIds.has(Number(o.value)));
+  }, [sections, activeTab, assignedClassSectionIds]);
+
+  const isSectionDisabled =
+    !classId ||
+    metaLoading ||
+    sectionsLoading ||
+    Boolean(classId && meta && !meta.assignmentRequiresSection) ||
+    (activeTab === "class" && sectionRequired && sectionOptions.length === 0);
+
+  const sectionPlaceholder = !classId
+    ? "Select class first"
+    : meta && !meta.assignmentRequiresSection
+      ? "No sections for this class"
+      : activeTab === "class" && sectionRequired && sectionOptions.length === 0
+        ? "All sections are assigned"
+        : "Select";
+
+  useEffect(() => {
+    if (!classId || !meta) return;
+    if (!meta.assignmentRequiresSection) {
+      setSectionId(null);
+      return;
+    }
+    if (sectionId && !sectionOptions.some((o) => o.value === sectionId)) {
+      setSectionId(null);
+    }
+  }, [classId, meta, sectionOptions, sectionId]);
+
+  const subjectSectionScopeReady = Boolean(
+    classId && (!sectionRequired || sectionId)
   );
+
+  const assignedSubjectIds = useMemo(() => {
+    if (activeTab !== "subject" || !subjectSectionScopeReady) return new Set<number>();
+    const cid = Number(classId);
+    const csid = sectionRequired && sectionId ? Number(sectionId) : null;
+    const assigned = new Set<number>();
+    subjectRows.forEach((r) => {
+      if (r.classId !== cid || r.id === editingId) return;
+      if (sectionRequired) {
+        if (csid == null || Number(r.classSectionId) !== csid) return;
+      } else if (r.classSectionId != null) {
+        return;
+      }
+      assigned.add(Number(r.subjectId));
+    });
+    return assigned;
+  }, [activeTab, classId, sectionId, sectionRequired, subjectSectionScopeReady, subjectRows, editingId]);
 
   const subjectOptions = useMemo(() => {
     if (!classId) return [];
-    return (subjects || [])
-      .map((s: { id: number; subject_name?: string; subject_type?: string; master_subject_id?: number }) => ({
+    if (activeTab === "subject" && sectionRequired && !sectionId) return [];
+    const options = (subjects || []).map(
+      (s: { id: number; subject_name?: string; subject_type?: string; master_subject_id?: number }) => ({
         value: String(s.master_subject_id || s.id),
         label: `${s.subject_name ?? String(s.id)} ${s.subject_type ? `(${s.subject_type})` : ""}`.trim(),
-      }));
-  }, [subjects, classId]);
+      })
+    );
+    if (activeTab !== "subject" || !subjectSectionScopeReady || assignedSubjectIds.size === 0) {
+      return options;
+    }
+    return options.filter((o) => !assignedSubjectIds.has(Number(o.value)));
+  }, [subjects, classId, activeTab, subjectSectionScopeReady, assignedSubjectIds, sectionRequired, sectionId]);
+
+  useEffect(() => {
+    if (activeTab !== "subject" || !classId) return;
+    if (subjectId && !subjectOptions.some((o) => o.value === subjectId)) {
+      setSubjectId(null);
+    }
+  }, [activeTab, classId, subjectOptions, subjectId]);
+
+  const isSubjectDisabled =
+    activeTab !== "subject" ||
+    !classId ||
+    subjectsLoading ||
+    (sectionRequired && !sectionId) ||
+    (subjectSectionScopeReady && subjectOptions.length === 0);
+
+  const subjectPlaceholder = !classId
+    ? "Select class first"
+    : sectionRequired && !sectionId
+      ? "Select section first"
+      : activeTab === "subject" && subjectSectionScopeReady && subjectOptions.length === 0
+        ? "All subjects are assigned"
+        : "Select";
 
   const teacherOptions = useMemo(
     () =>
@@ -197,7 +293,7 @@ const TeacherAssignments = () => {
       setFormError(`Teacher, class${activeTab === "subject" ? ", and subject" : ""} are required.`);
       return;
     }
-    if (showSectionField && !sectionId) {
+    if (sectionRequired && !sectionId) {
       setFormError("Section is required for this class.");
       return;
     }
@@ -206,7 +302,7 @@ const TeacherAssignments = () => {
       const commonBody = {
         teacherId: Number(teacherId),
         classId: Number(classId),
-        classSectionId: showSectionField && sectionId ? Number(sectionId) : null,
+        classSectionId: sectionRequired && sectionId ? Number(sectionId) : null,
         academicYearId,
       };
 
@@ -328,20 +424,29 @@ const TeacherAssignments = () => {
                   />
                   {classesLoading && <span className="small text-muted">Loading classes…</span>}
                 </div>
-                {showSectionField && (
-                  <div className="col-md-6 col-lg-3">
-                    <label className="form-label">
-                      Section <span className="text-danger">*</span>
-                    </label>
-                    <CommonSelect
-                      className="select"
-                      options={sectionOptions}
-                      value={sectionId}
-                      onChange={(v) => setSectionId(v)}
-                    />
-                    {sectionsLoading && <span className="small text-muted">Loading sections…</span>}
-                  </div>
-                )}
+                <div className="col-md-6 col-lg-3">
+                  <label className="form-label">
+                    Section {sectionRequired && <span className="text-danger">*</span>}
+                  </label>
+                  <CommonSelect
+                    className="select"
+                    options={sectionOptions}
+                    value={sectionId}
+                    onChange={(v) => {
+                      if (!classId || isSectionDisabled) return;
+                      setSectionId(v);
+                      if (!editingId) setSubjectId(null);
+                    }}
+                    isDisabled={isSectionDisabled}
+                    placeholder={sectionPlaceholder}
+                    noOptionsMessage={() =>
+                      !classId ? "Select a class first" : "No sections for this class"
+                    }
+                  />
+                  {(sectionsLoading || metaLoading) && classId && (
+                    <span className="small text-muted">Loading sections…</span>
+                  )}
+                </div>
                 {activeTab === "subject" ? (
                   <div className="col-md-6 col-lg-3">
                     <label className="form-label">Subject</label>
@@ -349,9 +454,23 @@ const TeacherAssignments = () => {
                       className="select"
                       options={subjectOptions}
                       value={subjectId}
-                      onChange={(v) => setSubjectId(v)}
+                      onChange={(v) => {
+                        if (isSubjectDisabled) return;
+                        setSubjectId(v);
+                      }}
+                      isDisabled={isSubjectDisabled}
+                      placeholder={subjectPlaceholder}
+                      noOptionsMessage={() =>
+                        !classId
+                          ? "Select a class first"
+                          : sectionRequired && !sectionId
+                            ? "Select a section first"
+                            : "No subjects available"
+                      }
                     />
-                    {subjectsLoading && <span className="small text-muted">Loading subjects…</span>}
+                    {subjectsLoading && classId && (
+                      <span className="small text-muted">Loading subjects…</span>
+                    )}
                   </div>
                 ) : (
                   <div className="col-md-6 col-lg-3">
