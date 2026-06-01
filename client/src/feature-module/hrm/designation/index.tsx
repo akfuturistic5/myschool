@@ -3,7 +3,7 @@ import type { TableData } from "../../../core/data/interface";
 import Table from "../../../core/common/dataTable/index";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
-import { activeList, holidays } from "../../../core/common/selectoption/selectoption";
+import { activeList } from "../../../core/common/selectoption/selectoption";
 import { Link } from "react-router-dom";
 import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
@@ -53,7 +53,9 @@ const Designation = () => {
   const routes = all_routes;
   const { designations, loading, error, refetch } = useDesignations();
   const { departments, loading: departmentsLoading } = useDepartments();
-  const data = designations;
+  const [filterDepartment, setFilterDepartment] = useState("Select");
+  const [filterStatus, setFilterStatus] = useState("Select");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [selectedDesignation, setSelectedDesignation] = useState<any>(null);
   const [editDesignationName, setEditDesignationName] = useState('');
   const [editDesignationStatus, setEditDesignationStatus] = useState(true);
@@ -75,8 +77,39 @@ const Designation = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  const departmentFilterOptions = useMemo(
+    () => [
+      { value: "Select", label: "Select" },
+      ...departments.map((d: any) => {
+        const rawId = d.originalData?.id ?? d.id;
+        const name =
+          d.department ?? d.originalData?.department_name ?? `Department ${rawId}`;
+        return { value: String(rawId), label: String(name) };
+      }),
+    ],
+    [departments]
+  );
+
+  const filteredDesignations = useMemo(() => {
+    const rows = designations.filter((r: any) => {
+      const deptId = r.originalData?.department_id;
+      const deptOk =
+        filterDepartment === "Select" ||
+        String(deptId ?? "") === filterDepartment;
+      const statusOk =
+        filterStatus === "Select" || String(r.status ?? "") === filterStatus;
+      return deptOk && statusOk;
+    });
+    return [...rows].sort((a: any, b: any) => {
+      const cmp = String(a.designation ?? "").localeCompare(String(b.designation ?? ""), undefined, {
+        sensitivity: "base",
+      });
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+  }, [designations, filterDepartment, filterStatus, sortOrder]);
+
   const designationExportRows = useMemo(() => {
-    return designations.map((r: any) => {
+    return filteredDesignations.map((r: any) => {
       const o = r.originalData || {};
       const deptId = o.department_id;
       let deptName = "—";
@@ -98,7 +131,7 @@ const Designation = () => {
         Status: String(r.status ?? ""),
       };
     });
-  }, [designations, departments]);
+  }, [filteredDesignations, departments]);
 
   const departmentNameById = useMemo(() => {
     const map = new Map<number, string>();
@@ -423,26 +456,38 @@ const Designation = () => {
                     <div className="row">
                       <div className="col-md-12">
                         <div className="mb-3">
-                          <label className="form-label">Holiday Title</label>
+                          <label className="form-label">Department</label>
                           <CommonSelect
-                                  className="select"
-                                  options={activeList}
-                                />
+                            className="select"
+                            options={departmentFilterOptions}
+                            value={filterDepartment === "Select" ? null : filterDepartment}
+                            onChange={(v) => setFilterDepartment(v || "Select")}
+                          />
                         </div>
                       </div>
                       <div className="col-md-12">
                         <div className="mb-0">
                           <label className="form-label">Status</label>
                           <CommonSelect
-                                  className="select"
-                                  options={holidays}
-                                />
+                            className="select"
+                            options={activeList}
+                            value={filterStatus === "Select" ? null : filterStatus}
+                            onChange={(v) => setFilterStatus(v || "Select")}
+                          />
                         </div>
                       </div>
                     </div>
                   </div>
                   <div className="p-3 d-flex align-items-center justify-content-end">
-                    <Link to="#" className="btn btn-light me-3">
+                    <Link
+                      to="#"
+                      className="btn btn-light me-3"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setFilterDepartment("Select");
+                        setFilterStatus("Select");
+                      }}
+                    >
                       Reset
                     </Link>
                     <Link
@@ -469,7 +514,11 @@ const Designation = () => {
                       <li>
                         <Link
                           to="#"
-                          className="dropdown-item rounded-1"
+                          className={`dropdown-item rounded-1${sortOrder === "asc" ? " active" : ""}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setSortOrder("asc");
+                          }}
                         >
                           Ascending
                         </Link>
@@ -477,25 +526,13 @@ const Designation = () => {
                       <li>
                         <Link
                           to="#"
-                          className="dropdown-item rounded-1"
+                          className={`dropdown-item rounded-1${sortOrder === "desc" ? " active" : ""}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setSortOrder("desc");
+                          }}
                         >
                           Descending
-                        </Link>
-                      </li>
-                      <li>
-                        <Link
-                          to="#"
-                          className="dropdown-item rounded-1"
-                        >
-                          Recently Viewed
-                        </Link>
-                      </li>
-                      <li>
-                        <Link
-                          to="#"
-                          className="dropdown-item rounded-1"
-                        >
-                          Recently Added
                         </Link>
                       </li>
                     </ul>
@@ -531,7 +568,7 @@ const Designation = () => {
 
                 {/* Student List */}
                 {!loading && !error && (
-                  <Table columns={columns} dataSource={data} Selection={true}/>
+                  <Table columns={columns} dataSource={filteredDesignations} Selection={true}/>
                 )}
                 {/* /Student List */}
               </div>

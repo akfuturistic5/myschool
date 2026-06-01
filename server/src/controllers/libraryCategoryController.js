@@ -106,7 +106,7 @@ const deleteCategory = async (req, res) => {
   try {
     const { id } = req.params;
     const inUse = await query(
-      `SELECT 1 FROM library_books WHERE category_id = $1 AND COALESCE(is_active, true) = true LIMIT 1`,
+      `SELECT 1 FROM library_books WHERE category_id = $1 AND deleted_at IS NULL LIMIT 1`,
       [id]
     );
     if (inUse.rows.length > 0) {

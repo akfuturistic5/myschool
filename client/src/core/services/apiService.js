@@ -302,8 +302,12 @@ class ApiService {
   }
 
   // Sections
-  async getSections() {
-    return this.makeRequest('/sections');
+  async getSections(academicYearId = null) {
+    const q =
+      academicYearId != null && String(academicYearId).trim() !== ''
+        ? `?academic_year_id=${encodeURIComponent(String(academicYearId))}`
+        : '';
+    return this.makeRequest(`/sections${q}`);
   }
 
   async getSectionById(id) {

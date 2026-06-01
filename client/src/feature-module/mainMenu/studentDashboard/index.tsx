@@ -29,6 +29,20 @@ const parseId = (v: unknown): number | null => {
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
 };
 
+/** Parse displayed times like "8:00 AM" for chronological sort. */
+const parseDisplayTimeToMinutes = (t: unknown): number => {
+  const s = String(t ?? "").trim();
+  if (!s || s === "—" || s === "N/A") return 24 * 60;
+  const m = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  if (!m) return 24 * 60;
+  let h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const ap = (m[3] || "").toUpperCase();
+  if (ap === "PM" && h < 12) h += 12;
+  if (ap === "AM" && h === 12) h = 0;
+  return h * 60 + min;
+};
+
 const StudentDasboard = () => {
   const routes = all_routes;
   const headerAcademicYearId = useSelector(selectSelectedAcademicYearId);
@@ -167,7 +181,7 @@ const StudentDasboard = () => {
     const classMatch = normalizeText((student as any)?.class_name || (student as any)?.class);
     const sectionMatch = normalizeText((student as any)?.section_name || (student as any)?.section);
     const dayName = selectedDate ? DAY_NAMES[selectedDate.day()] : DAY_NAMES[today.getDay()];
-    return allSchedules.filter(
+    const filtered = allSchedules.filter(
       (s: { class?: string; section?: string; day?: string; originalData?: any }) => {
         const rowClassId = parseId(s.originalData?.class_id);
         const rowSectionId = parseId(s.originalData?.section_id ?? s.originalData?.class_section_id);
@@ -185,6 +199,14 @@ const StudentDasboard = () => {
         return classOk && sectionOk && dayOk;
       }
     );
+    return [...filtered].sort((a: any, b: any) => {
+      const ta = parseDisplayTimeToMinutes(a.startTime);
+      const tb = parseDisplayTimeToMinutes(b.startTime);
+      if (ta !== tb) return ta - tb;
+      const slotA = Number(a.originalData?.time_slot_id) || 0;
+      const slotB = Number(b.originalData?.time_slot_id) || 0;
+      return slotA - slotB;
+    });
   }, [student, allSchedules, selectedDate, today.getDay()]);
 
   // Class faculties - unique teachers from schedules for student's class/section
@@ -490,11 +512,15 @@ const StudentDasboard = () => {
                       )}
                       {!scheduleLoading && todaysClasses?.length > 0 && (
                         <div className="row g-2">
-                          {todaysClasses.map((cls: { id?: string; subject?: string; startTime?: string; endTime?: string; teacher?: string; classRoom?: string }, idx: number) => (
-                            <div key={cls.id ?? idx} className="col-6 d-flex">
+                          {todaysClasses.map((cls: { id?: string; subject?: string; startTime?: string; endTime?: string; teacher?: string; classRoom?: string; originalData?: Record<string, unknown> }, idx: number) => {
+                            const od = cls.originalData || {};
+                            const slotLabel = String(od.slotName ?? od.slot_name ?? "").trim();
+                            const periodLabel = slotLabel || `Period ${idx + 1}`;
+                            return (
+                            <div key={cls.id ?? `${periodLabel}-${idx}`} className="col-6 d-flex">
                               <div className="border rounded p-2 w-100 h-100">
                                 <div className="d-flex align-items-center justify-content-between mb-1">
-                                  <span className="badge badge-soft-primary shadow-none">Period {idx + 1}</span>
+                                  <span className="badge badge-soft-primary shadow-none">{periodLabel}</span>
                                   {cls.classRoom && (
                                     <span className="badge bg-light text-muted fw-normal">Room: {cls.classRoom}</span>
                                   )}
@@ -507,7 +533,8 @@ const StudentDasboard = () => {
                                 <p className="mb-0 small text-truncate">{cls.teacher || "Teacher not assigned"}</p>
                               </div>
                             </div>
-                          ))}
+                          );
+                          })}
                         </div>
                       )}
                     </div>

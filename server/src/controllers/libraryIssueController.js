@@ -1,18 +1,21 @@
 const { query, executeTransaction } = require('../config/database');
-const { ROLES } = require('../config/roles');
 const { toYmd } = require('../utils/dateOnly');
 const { resolveAcademicYearIdFromQuery, getDefaultAcademicYearId } = require('../utils/libraryAcademicYear');
+const { getLibraryPersonScope } = require('../utils/libraryPersonScope');
 
-async function getPersonScope(req) {
-  const roleId = req.user?.role_id;
-  if (roleId === ROLES.STUDENT) {
-    const r = await query(
-      `SELECT id FROM students WHERE user_id = $1 AND COALESCE(is_active, true) = true`,
-      [req.user.id]
-    );
-    return { student_id: r.rows[0]?.id ?? null };
-  }
-  return {};
+/** Resolve academic year from enrollment ledger (students table may not have academic_year_id). */
+async function resolveStudentAcademicYearId(studentId) {
+  if (studentId == null) return null;
+  const r = await query(
+    `SELECT l.to_academic_year_id AS academic_year_id
+     FROM student_lifecycle_ledger l
+     WHERE l.student_id = $1
+     ORDER BY l.event_date DESC NULLS LAST, l.id DESC
+     LIMIT 1`,
+    [studentId]
+  );
+  const ay = r.rows[0]?.academic_year_id;
+  return ay != null && Number.isFinite(Number(ay)) ? Number(ay) : null;
 }
 
 function normalizeDbStatus(raw) {
@@ -129,7 +132,16 @@ const listIssues = async (req, res) => {
       String(req.query.include_all_years || '').trim().toLowerCase() === 'true';
     let yearId = includeAllYears ? null : await resolveAcademicYearIdFromQuery(req);
     const statusRaw = req.query.status ? String(req.query.status).trim() : '';
-    const scope = await getPersonScope(req);
+    const scope = await getLibraryPersonScope(req);
+
+    if (scope.restrict_to_self && scope.student_id == null) {
+      return res.status(200).json({
+        status: 'SUCCESS',
+        message: 'Issues fetched',
+        data: [],
+        count: 0,
+      });
+    }
 
     const params = [];
     let where = 'WHERE i.deleted_at IS NULL';
@@ -142,9 +154,8 @@ const listIssues = async (req, res) => {
     if (scope.student_id != null) {
       const scopedStudentIds = [scope.student_id];
       if (yearId == null) {
-        const sy = await query(`SELECT academic_year_id FROM students WHERE id = $1 LIMIT 1`, [scope.student_id]);
-        const candidate = sy.rows[0]?.academic_year_id;
-        if (candidate != null && Number.isFinite(Number(candidate))) yearId = Number(candidate);
+        const candidate = await resolveStudentAcademicYearId(scope.student_id);
+        if (candidate != null) yearId = candidate;
       }
       params.push(scopedStudentIds);
       where += ` AND i.student_id = ANY($${params.length}::int[])`;
@@ -171,12 +182,8 @@ const listIssues = async (req, res) => {
       const requestedStudentId = parseInt(req.query.student_id, 10);
       const resolvedStudentIds = Number.isFinite(requestedStudentId) ? [requestedStudentId] : [];
       if (yearId == null && resolvedStudentIds.length > 0) {
-        const sy = await query(
-          `SELECT academic_year_id FROM students WHERE id = ANY($1::int[]) ORDER BY id LIMIT 1`,
-          [resolvedStudentIds]
-        );
-        const candidate = sy.rows[0]?.academic_year_id;
-        if (candidate != null && Number.isFinite(Number(candidate))) yearId = Number(candidate);
+        const candidate = await resolveStudentAcademicYearId(resolvedStudentIds[0]);
+        if (candidate != null) yearId = candidate;
       }
       params.push(resolvedStudentIds.length > 0 ? resolvedStudentIds : [requestedStudentId]);
       where += ` AND i.student_id = ANY($${params.length}::int[])`;
@@ -243,7 +250,7 @@ const listIssues = async (req, res) => {
 const getIssue = async (req, res) => {
   try {
     const { id } = req.params;
-    const scope = await getPersonScope(req);
+    const scope = await getLibraryPersonScope(req);
     const r = await query(
       `${ISSUE_LIST_SELECT} ${ISSUE_LIST_JOINS} WHERE i.id = $1`,
       [id]
@@ -252,8 +259,10 @@ const getIssue = async (req, res) => {
       return res.status(404).json({ status: 'ERROR', message: 'Issue not found' });
     }
     const row = r.rows[0];
-    if (scope.student_id != null && Number(row.student_id) !== Number(scope.student_id)) {
-      return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
+    if (scope.restrict_to_self) {
+      if (scope.student_id == null || Number(row.student_id) !== Number(scope.student_id)) {
+        return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
+      }
     }
     res.status(200).json({ status: 'SUCCESS', message: 'OK', data: mapIssueRow(row) });
   } catch (e) {

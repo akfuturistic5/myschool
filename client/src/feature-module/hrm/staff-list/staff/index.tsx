@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { exportToExcel, exportToPDF, printData } from "../../../../core/utils/exportUtils";
 import { Link } from "react-router-dom";
 import { useSelector } from "react-redux";
 
@@ -223,6 +224,59 @@ const Staff = () => {
   ]);
 
   const data = filteredAndSorted;
+
+  const staffExportColumns = useMemo(
+    () => [
+      { title: "ID", dataKey: "id" },
+      { title: "Name", dataKey: "name" },
+      { title: "Department", dataKey: "department" },
+      { title: "Designation", dataKey: "designation" },
+      { title: "Role", dataKey: "role" },
+      { title: "Phone", dataKey: "phone" },
+      { title: "Email", dataKey: "email" },
+      { title: "Date of Join", dataKey: "dateOfJoin" },
+    ],
+    []
+  );
+
+  const staffExportRows = useMemo(
+    () =>
+      filteredAndSorted.map((row: any) => ({
+        id: String(row.id ?? ""),
+        name: String(row.name ?? ""),
+        department: String(row.department ?? ""),
+        designation: String(row.designation ?? ""),
+        role: String(row.role ?? ""),
+        phone: String(row.phone ?? ""),
+        email: String(row.email ?? ""),
+        dateOfJoin: String(row.dateOfJoin ?? ""),
+      })),
+    [filteredAndSorted]
+  );
+
+  const handleStaffPrint = useCallback(() => {
+    if (!staffExportRows.length) {
+      window.alert("No staff records to print for the current filters.");
+      return;
+    }
+    printData("Staff List", staffExportColumns, staffExportRows);
+  }, [staffExportRows, staffExportColumns]);
+
+  const handleStaffExportPdf = useCallback(() => {
+    if (!staffExportRows.length) {
+      window.alert("No staff records to export for the current filters.");
+      return;
+    }
+    exportToPDF(staffExportRows, "Staff List", "staff-list", staffExportColumns);
+  }, [staffExportRows, staffExportColumns]);
+
+  const handleStaffExportExcel = useCallback(() => {
+    if (!staffExportRows.length) {
+      window.alert("No staff records to export for the current filters.");
+      return;
+    }
+    exportToExcel(staffExportRows, "staff-list", "Staff List");
+  }, [staffExportRows]);
 
   const resetFilters = () => {
     setFilterName("");
@@ -556,7 +610,12 @@ const Staff = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption
+                onRefresh={() => void refetch()}
+                onPrint={handleStaffPrint}
+                onExportPdf={handleStaffExportPdf}
+                onExportExcel={handleStaffExportExcel}
+              />
               <div className="mb-2">
                 <Link
                   to={routes.addStaff}

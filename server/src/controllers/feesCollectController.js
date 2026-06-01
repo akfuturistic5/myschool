@@ -13,6 +13,20 @@ const { query, getClient, executeTransaction } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getAuthContext, isAdmin } = require('../utils/accessControl');
 
+/** Sum of all configured fee line items for class+year (matches Student Fees breakdown). */
+const getLiveClassFeeTotalSql = `
+    SELECT COALESCE(SUM(fct.amount), 0) AS live_total
+    FROM fees f
+    JOIN fees_class_types fct ON fct.fee_id = f.id
+        AND fct.class_id = f.class_id
+        AND fct.academic_year_id = f.academic_year_id
+    WHERE f.class_id = $1 AND f.academic_year_id = $2 AND f.deleted_at IS NULL`;
+
+const fetchLiveClassFeeTotal = async (db, classId, academicYearId) => {
+    const res = await db.query(getLiveClassFeeTotalSql, [classId, academicYearId]);
+    return parseFloat(res.rows[0]?.live_total || 0);
+};
+
 // ─── RECEIPT NUMBER ───────────────────────────────────────────────────────────
 const generateReceiptNo = async (academicYearId, client) => {
     const yearResult = await client.query(
@@ -170,9 +184,10 @@ const collectFees = async (req, res) => {
             totalNewPayment += advanceUsed;
         }
 
-        // 4. Update fees_paids ledger
+        // 4. Update fees_paids ledger (balance vs live class fee total, not stale total_payable)
+        const liveTotal = await fetchLiveClassFeeTotal(client, ledger.class_id, academic_year_id);
         const newTotalPaid = parseFloat(ledger.total_paid) + totalNewPayment;
-        const newBalance = parseFloat(ledger.total_payable) - newTotalPaid;
+        const newBalance = liveTotal - newTotalPaid;
         const newStatus = newBalance <= 0 ? 'paid' : newTotalPaid > 0 ? 'partial' : 'pending';
 
         await client.query(
@@ -250,8 +265,14 @@ const reversePayment = async (req, res) => {
         );
 
         if (ledger.rowCount > 0) {
-            const newTotalPaid = Math.max(0, parseFloat(ledger.rows[0].total_paid) - revertAmount);
-            const newBalance = parseFloat(ledger.rows[0].total_payable) - newTotalPaid;
+            const ledgerRow = ledger.rows[0];
+            const liveTotal = await fetchLiveClassFeeTotal(
+                client,
+                ledgerRow.class_id,
+                payment.academic_year_id
+            );
+            const newTotalPaid = Math.max(0, parseFloat(ledgerRow.total_paid) - revertAmount);
+            const newBalance = liveTotal - newTotalPaid;
             const newStatus = newBalance <= 0 ? 'paid' : newTotalPaid > 0 ? 'partial' : 'pending';
 
             await client.query(
@@ -390,13 +411,16 @@ const getFeeCollectionsList = async (req, res) => {
                 u.avatar AS "studentImage",
                 curr.class_name AS class,
                 curr.section_name AS section,
-                (COALESCE(fp.total_payable, 0) + COALESCE(opt.total_optional, 0)) AS amount,
+                -- Live class fee total (all line items). Stale fees_paids.total_payable is not
+                -- updated when new fees are added after partial/full payment (see autoAssignFeesToStudents).
+                COALESCE(flive.live_total, 0) AS amount,
                 COALESCE(fp.total_paid, 0) AS paid,
-                ((COALESCE(fp.total_payable, 0) + COALESCE(opt.total_optional, 0)) - COALESCE(fp.total_paid, 0)) AS balance,
+                GREATEST(0, COALESCE(flive.live_total, 0) - COALESCE(fp.total_paid, 0)) AS balance,
                 CASE 
-                    WHEN ((COALESCE(fp.total_payable, 0) + COALESCE(opt.total_optional, 0)) - COALESCE(fp.total_paid, 0)) <= 0 
-                         AND (COALESCE(fp.total_payable, 0) + COALESCE(opt.total_optional, 0)) > 0 THEN 'paid'
-                    WHEN COALESCE(fp.total_paid, 0) > 0 THEN 'partial'
+                    WHEN GREATEST(0, COALESCE(flive.live_total, 0) - COALESCE(fp.total_paid, 0)) <= 0 
+                         AND COALESCE(flive.live_total, 0) > 0 THEN 'paid'
+                    WHEN COALESCE(fp.total_paid, 0) > 0
+                         AND GREATEST(0, COALESCE(flive.live_total, 0) - COALESCE(fp.total_paid, 0)) > 0 THEN 'partial'
                     ELSE 'unpaid'
                 END AS status,
                 (
@@ -429,14 +453,15 @@ const getFeeCollectionsList = async (req, res) => {
              ) curr ON TRUE
              LEFT JOIN fees_paids fp ON fp.student_id = s.id AND fp.academic_year_id = $1
              LEFT JOIN LATERAL (
-                SELECT SUM(fct.amount) AS total_optional
-                FROM fees_class_types fct
-                JOIN fees f ON fct.fee_id = f.id
-                WHERE f.class_id = curr.class_id
+                SELECT COALESCE(SUM(fct.amount), 0) AS live_total
+                FROM fees f
+                JOIN fees_class_types fct ON fct.fee_id = f.id
+                    AND fct.class_id = f.class_id
+                    AND fct.academic_year_id = f.academic_year_id
+                WHERE f.class_id = COALESCE(fp.class_id, curr.class_id)
                   AND f.academic_year_id = $1
-                  AND fct.is_optional = true
                   AND f.deleted_at IS NULL
-             ) opt ON TRUE
+             ) flive ON TRUE
              WHERE s.status = 'Active'
              ORDER BY curr.class_name ASC NULLS LAST, u.first_name ASC`,
             [academic_year_id]

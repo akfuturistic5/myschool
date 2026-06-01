@@ -3,10 +3,7 @@ import { useClassRooms } from "../../../core/hooks/useClassRooms";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Table from "../../../core/common/dataTable/index";
 import PredefinedDateRanges from "../../../core/common/datePicker";
-import {
-  capacitycount,
-  count,
-} from "../../../core/common/selectoption/selectoption";
+import { activeList } from "../../../core/common/selectoption/selectoption";
 import CommonSelect from "../../../core/common/commonSelect";
 import type { TableData } from "../../../core/data/interface";
 import { Link } from "react-router-dom";
@@ -30,16 +27,58 @@ const ClassRoom = () => {
   const [roomToDelete, setRoomToDelete] = useState<{ id: number; room_no: string } | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [filterRoomNo, setFilterRoomNo] = useState("Select");
+  const [filterCapacity, setFilterCapacity] = useState("Select");
+  const [filterStatus, setFilterStatus] = useState("Select");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
-  const data = (classRooms || []).map((r: any) => ({
+  const baseData = useMemo(
+    () =>
+      (classRooms || []).map((r: any) => ({
     id: r.id,
     roomNo: r.room_number ?? r.room_no ?? r.roomNo ?? "",
     capacity: String(r.capacity ?? ""),
     buildingName: r.building_name ?? r.buildingName ?? "",
     floor: String(r.floor ?? ""),
-    is_active: r.is_active ?? (String(r.status ?? "").toLowerCase() === "active"),
-    key: r.id,
-  }));
+        is_active: r.is_active ?? (String(r.status ?? "").toLowerCase() === "active"),
+        key: r.id,
+      })),
+    [classRooms]
+  );
+
+  const roomNoOptions = useMemo(
+    () => [
+      { value: "Select", label: "Select" },
+      ...Array.from(new Set(baseData.map((r) => String(r.roomNo).trim()).filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b)
+      ).map((v) => ({ value: v, label: v })),
+    ],
+    [baseData]
+  );
+
+  const capacityOptions = useMemo(
+    () => [
+      { value: "Select", label: "Select" },
+      ...Array.from(new Set(baseData.map((r) => String(r.capacity).trim()).filter(Boolean))).sort(
+        (a, b) => Number(a) - Number(b)
+      ).map((v) => ({ value: v, label: v })),
+    ],
+    [baseData]
+  );
+
+  const data = useMemo(() => {
+    const filtered = baseData.filter((row) => {
+      const statusLabel = row.is_active ? "Active" : "Inactive";
+      if (filterRoomNo !== "Select" && String(row.roomNo) !== filterRoomNo) return false;
+      if (filterCapacity !== "Select" && String(row.capacity) !== filterCapacity) return false;
+      if (filterStatus !== "Select" && statusLabel !== filterStatus) return false;
+      return true;
+    });
+    return [...filtered].sort((a, b) => {
+      const cmp = String(a.roomNo).localeCompare(String(b.roomNo), undefined, { sensitivity: "base" });
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+  }, [baseData, filterRoomNo, filterCapacity, filterStatus, sortOrder]);
 
   const exportColumns = useMemo(
     () => [
@@ -353,19 +392,49 @@ const ClassRoom = () => {
                           <div className="col-md-12">
                             <div className="mb-3">
                               <label className="form-label">Room No</label>
-                              <CommonSelect className="select" options={count} />
+                              <CommonSelect
+                                className="select"
+                                options={roomNoOptions}
+                                value={filterRoomNo === "Select" ? null : filterRoomNo}
+                                onChange={(v) => setFilterRoomNo(v || "Select")}
+                              />
                             </div>
                           </div>
                           <div className="col-md-12">
                             <div className="mb-3">
                               <label className="form-label">Capacity</label>
-                              <CommonSelect className="select" options={capacitycount} />
+                              <CommonSelect
+                                className="select"
+                                options={capacityOptions}
+                                value={filterCapacity === "Select" ? null : filterCapacity}
+                                onChange={(v) => setFilterCapacity(v || "Select")}
+                              />
+                            </div>
+                          </div>
+                          <div className="col-md-12">
+                            <div className="mb-3">
+                              <label className="form-label">Status</label>
+                              <CommonSelect
+                                className="select"
+                                options={activeList}
+                                value={filterStatus === "Select" ? null : filterStatus}
+                                onChange={(v) => setFilterStatus(v || "Select")}
+                              />
                             </div>
                           </div>
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
+                        <Link
+                          to="#"
+                          className="btn btn-light me-3"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setFilterRoomNo("Select");
+                            setFilterCapacity("Select");
+                            setFilterStatus("Select");
+                          }}
+                        >
                           Reset
                         </Link>
                         <Link to="#" className="btn btn-primary" onClick={handleApplyClick}>
@@ -386,23 +455,27 @@ const ClassRoom = () => {
                   </Link>
                   <ul className="dropdown-menu p-3">
                     <li>
-                      <Link to="#" className="dropdown-item rounded-1 active">
+                      <Link
+                        to="#"
+                        className={`dropdown-item rounded-1${sortOrder === "asc" ? " active" : ""}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setSortOrder("asc");
+                        }}
+                      >
                         Ascending
                       </Link>
                     </li>
                     <li>
-                      <Link to="#" className="dropdown-item rounded-1">
+                      <Link
+                        to="#"
+                        className={`dropdown-item rounded-1${sortOrder === "desc" ? " active" : ""}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setSortOrder("desc");
+                        }}
+                      >
                         Descending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Viewed
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Added
                       </Link>
                     </li>
                   </ul>

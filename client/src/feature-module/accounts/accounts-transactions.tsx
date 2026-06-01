@@ -34,8 +34,15 @@ function mapTxApiToRow(r: any) {
   };
 }
 
-const AccountsTransactions = () => {
+export type AccountsTransactionsProps = {
+  /** When "membership", breadcrumb shows Membership instead of Finance & Accounts. */
+  breadcrumbModule?: "accounts" | "membership";
+};
+
+const AccountsTransactions = ({ breadcrumbModule = "accounts" }: AccountsTransactionsProps) => {
   const routes = all_routes;
+  const breadcrumbSectionLabel =
+    breadcrumbModule === "membership" ? "Membership" : "Finance & Accounts";
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -344,7 +351,7 @@ const AccountsTransactions = () => {
                     <Link to={routes.adminDashboard}>Dashboard</Link>
                   </li>
                   <li className="breadcrumb-item">
-                    <Link to="#">Finance &amp; Accounts</Link>
+                    <Link to="#">{breadcrumbSectionLabel}</Link>
                   </li>
                   <li className="breadcrumb-item active" aria-current="page">
                     Transactions

@@ -151,7 +151,6 @@ import {
 } from "../../core/components/saasRouteGuard";
 import MembershipAddon from "../membership/membershipaddon";
 import Membershipplan from "../membership/membershipplan";
-import MembershipTransaction from "../membership/membershiptrasaction";
 import BlankPage from "../pages/blankPage";
 import ComingSoon from "../pages/comingSoon";
 import Profile from "../pages/profile";
@@ -380,7 +379,7 @@ export const publicRoutes = [
   },
   {
     path: routes.membershipTransaction,
-    element: guardMembershipModule(<MembershipTransaction />),
+    element: guardMembershipModule(<AccountsTransactions breadcrumbModule="membership" />),
   },
   {
     path: routes.notes,

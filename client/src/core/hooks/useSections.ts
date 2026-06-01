@@ -30,7 +30,7 @@ export const useSections = (
       if (classId) {
         response = await apiService.getClassSections(classId, options.academicYearId);
       } else {
-        response = await apiService.getSections();
+        response = await apiService.getSections(options.academicYearId ?? null);
       }
 
       // Handle both { data: [...] } and direct array (for different API shapes)

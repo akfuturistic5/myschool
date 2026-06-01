@@ -1,19 +1,7 @@
 const { query, executeTransaction } = require('../config/database');
-const { ROLES } = require('../config/roles');
 const { toYmd } = require('../utils/dateOnly');
 const { resolveAcademicYearIdFromQuery, getDefaultAcademicYearId } = require('../utils/libraryAcademicYear');
-
-async function getPersonScope(req) {
-  const roleId = req.user?.role_id;
-  if (roleId === ROLES.STUDENT) {
-    const r = await query(
-      `SELECT id FROM students WHERE user_id = $1 AND COALESCE(is_active, true) = true`,
-      [req.user.id]
-    );
-    return { student_id: r.rows[0]?.id ?? null };
-  }
-  return {};
-}
+const { getLibraryPersonScope } = require('../utils/libraryPersonScope');
 
 function normalizeReservationStatus(raw) {
   const s = String(raw || '').trim().toLowerCase();
@@ -101,7 +89,12 @@ const LIST_JOINS = `
 
 const listReservations = async (req, res) => {
   try {
-    const scope = await getPersonScope(req);
+    const scope = await getLibraryPersonScope(req);
+
+    if (scope.restrict_to_self && scope.student_id == null) {
+      return res.status(200).json({ status: 'SUCCESS', message: 'OK', data: [], count: 0 });
+    }
+
     let yearId = await resolveAcademicYearIdFromQuery(req);
     if (yearId == null && scope.student_id != null) {
       const sy = await query(`SELECT academic_year_id FROM students WHERE id = $1 LIMIT 1`, [scope.student_id]);
@@ -184,13 +177,16 @@ const listReservations = async (req, res) => {
 const getReservation = async (req, res) => {
   try {
     const { id } = req.params;
-    const scope = await getPersonScope(req);
+    const scope = await getLibraryPersonScope(req);
     const r = await query(`${LIST_SELECT} ${LIST_JOINS} WHERE r.id = $1`, [id]);
     if (r.rows.length === 0) {
       return res.status(404).json({ status: 'ERROR', message: 'Reservation not found' });
     }
     const row = r.rows[0];
-    if (scope.student_id != null && Number(row.student_id) !== Number(scope.student_id)) {
+    if (
+      scope.restrict_to_self &&
+      (scope.student_id == null || Number(row.student_id) !== Number(scope.student_id))
+    ) {
       return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
     }
     res.status(200).json({ status: 'SUCCESS', message: 'OK', data: mapReservationRow(row) });

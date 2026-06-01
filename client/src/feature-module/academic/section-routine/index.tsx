@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import Swal from "sweetalert2";
 import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 import CommonSelect from "../../../core/common/commonSelect";
@@ -108,22 +109,38 @@ const SectionRoutine = () => {
 
   const hasGridExport = exportGridBody.length > 0;
 
+  const notifyExportBlocked = useCallback((message: string) => {
+    void Swal.fire({ icon: "info", title: "Export unavailable", text: message, confirmButtonText: "OK" });
+  }, []);
+
   const handleExportExcel = useCallback(() => {
+    if (!ready) {
+      notifyExportBlocked("Select class and section first.");
+      return;
+    }
     if (!hasGridExport) return;
     exportTimetableGridToExcel(exportGridHeaders, exportGridBody, "section-routine", "Section routine");
-  }, [hasGridExport, exportGridHeaders, exportGridBody]);
+  }, [ready, hasGridExport, exportGridHeaders, exportGridBody, notifyExportBlocked]);
 
   const handleExportPdf = useCallback(() => {
+    if (!ready) {
+      notifyExportBlocked("Select class and section first.");
+      return;
+    }
     if (!hasGridExport) return;
     exportTimetableGridToPDF(exportTitle, exportGridHeaders, exportGridBody, "section-routine", {
       showHead: "firstPage",
     });
-  }, [hasGridExport, exportTitle, exportGridHeaders, exportGridBody]);
+  }, [ready, hasGridExport, exportTitle, exportGridHeaders, exportGridBody, notifyExportBlocked]);
 
   const handlePrint = useCallback(() => {
+    if (!ready) {
+      notifyExportBlocked("Select class and section first.");
+      return;
+    }
     if (!hasGridExport) return;
     printTimetableGrid(exportTitle, exportGridHeaders, exportGridBody);
-  }, [hasGridExport, exportTitle, exportGridHeaders, exportGridBody]);
+  }, [ready, hasGridExport, exportTitle, exportGridHeaders, exportGridBody, notifyExportBlocked]);
 
   return (
     <div>

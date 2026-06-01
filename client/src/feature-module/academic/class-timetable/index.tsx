@@ -13,7 +13,17 @@ import { useTeachers } from "../../../core/hooks/useTeachers";
 import { apiService } from "../../../core/services/apiService";
 import Swal from "sweetalert2";
 import { httpErrorMessage } from "../utils/httpErrorMessage";
-import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
+import {
+  exportTimetableGridToExcel,
+  exportTimetableGridToPDF,
+  printTimetableGrid,
+} from "../../../core/utils/exportUtils";
+import {
+  WEEK_DAYS as ROUTINE_WEEK_DAYS,
+  buildPeriodColumnsFromSlots,
+  findCellForSlot,
+  formatSectionExportCell,
+} from "../utils/sectionRoutineGrid";
 import { useClassRooms } from "../../../core/hooks/useClassRooms";
 
 const WEEK_DAYS: { label: string; dow: number }[] = [
@@ -582,51 +592,87 @@ const ClassTimetable = () => {
   }, [updateScrollButtons, periodColumns, selectionReady, loading]);
 
 
-  const exportColumns = useMemo(
-    () => [
-      { title: "Sr", dataKey: "sr" },
-      { title: "Day", dataKey: "day" },
-      { title: "Period", dataKey: "period" },
-      { title: "Start", dataKey: "start" },
-      { title: "End", dataKey: "end" },
-      { title: "Subject", dataKey: "subject" },
-      { title: "Teacher", dataKey: "teacher" },
-      { title: "Room", dataKey: "room" },
-    ],
-    []
+  const exportPeriodColumns = useMemo(
+    () => buildPeriodColumnsFromSlots(apiSlots as Record<string, unknown>[], routineData || []),
+    [apiSlots, routineData]
   );
 
-  const exportRows = useMemo(() => {
-    if (!selectionReady || !Array.isArray(routineData)) return [];
-    return routineData.map((r: any, i: number) => {
-      const od = r.originalData || {};
-      return {
-        sr: i + 1,
-        day: String(r.day ?? ""),
-        period: String(od.slotName ?? r.originalData?.slot_name ?? ""),
-        start: String(r.startTime ?? ""),
-        end: String(r.endTime ?? ""),
-        subject: String(r.subject ?? ""),
-        teacher: String(r.teacher ?? ""),
-        room: String(r.classRoom ?? ""),
-      };
-    });
-  }, [routineData, selectionReady]);
+  const selectedClassName = useMemo(() => {
+    const c = classes.find((x: { id?: unknown }) => String(x.id) === String(filterClassId));
+    return c ? formatClassLabel(c as Record<string, unknown>) : String(filterClassId || "");
+  }, [classes, filterClassId]);
+
+  const selectedSectionName = useMemo(() => {
+    const s = sections.find((x: { id?: unknown }) => String(x.id) === String(filterSectionId));
+    return s ? String((s as { section_name?: string }).section_name ?? filterSectionId) : String(filterSectionId || "");
+  }, [sections, filterSectionId]);
+
+  const exportGridHeaders = useMemo(
+    () => [
+      "Day",
+      ...exportPeriodColumns.map((c) => (c.isBreak ? c.label : `${c.label}\n${c.start} – ${c.end}`)),
+    ],
+    [exportPeriodColumns]
+  );
+
+  const exportGridBody = useMemo(() => {
+    if (!selectionReady || !exportPeriodColumns.length) return [] as string[][];
+    return ROUTINE_WEEK_DAYS.map(({ label: dayLabel }) => [
+      dayLabel,
+      ...exportPeriodColumns.map((col) =>
+        formatSectionExportCell(col, findCellForSlot(routineData, dayLabel, col.id), sectionRoomLabel)
+      ),
+    ]);
+  }, [selectionReady, exportPeriodColumns, routineData, sectionRoomLabel]);
+
+  const exportTitle = useMemo(
+    () => `Class timetable — ${selectedClassName}${selectedSectionName ? ` / ${selectedSectionName}` : ""}`,
+    [selectedClassName, selectedSectionName]
+  );
+
+  const hasGridExport = exportGridBody.length > 0;
+
+  const notifyExportBlocked = useCallback((message: string) => {
+    void Swal.fire({ icon: "info", title: "Export unavailable", text: message, confirmButtonText: "OK" });
+  }, []);
 
   const handleExportExcel = useCallback(() => {
-    if (!exportRows.length) return;
-    exportToExcel(exportRows, "class-timetable", "Timetable");
-  }, [exportRows]);
+    if (!selectionReady) {
+      notifyExportBlocked("Select class and section first.");
+      return;
+    }
+    if (!hasGridExport) {
+      notifyExportBlocked("Load the timetable grid before exporting.");
+      return;
+    }
+    exportTimetableGridToExcel(exportGridHeaders, exportGridBody, "class-timetable", "Class timetable");
+  }, [selectionReady, hasGridExport, exportGridHeaders, exportGridBody, notifyExportBlocked]);
 
   const handleExportPdf = useCallback(() => {
-    if (!exportRows.length) return;
-    exportToPDF(exportRows, "Class timetable", "class-timetable", exportColumns);
-  }, [exportRows, exportColumns]);
+    if (!selectionReady) {
+      notifyExportBlocked("Select class and section first.");
+      return;
+    }
+    if (!hasGridExport) {
+      notifyExportBlocked("Load the timetable grid before exporting.");
+      return;
+    }
+    exportTimetableGridToPDF(exportTitle, exportGridHeaders, exportGridBody, "class-timetable", {
+      showHead: "firstPage",
+    });
+  }, [selectionReady, hasGridExport, exportTitle, exportGridHeaders, exportGridBody, notifyExportBlocked]);
 
   const handlePrint = useCallback(() => {
-    if (!exportRows.length) return;
-    printData("Class timetable", exportColumns, exportRows);
-  }, [exportRows, exportColumns]);
+    if (!selectionReady) {
+      notifyExportBlocked("Select class and section first.");
+      return;
+    }
+    if (!hasGridExport) {
+      notifyExportBlocked("Load the timetable grid before printing.");
+      return;
+    }
+    printTimetableGrid(exportTitle, exportGridHeaders, exportGridBody);
+  }, [selectionReady, hasGridExport, exportTitle, exportGridHeaders, exportGridBody, notifyExportBlocked]);
 
   const [cellDrafts, setCellDrafts] = useState<Record<string, CellDraft[]>>({});
   const [initialCellDrafts, setInitialCellDrafts] = useState<Record<string, CellDraft[]>>({});
